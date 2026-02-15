@@ -13,6 +13,7 @@ import { statsRoutes } from './routes/stats';
 import { exportRoutes } from './routes/export';
 import { pushRoutes } from './routes/push';
 import { timelineRoutes } from './routes/timeline';
+import { handleScheduled } from './scheduled';
 
 export type Bindings = {
   DB: D1Database;
@@ -47,4 +48,9 @@ app.get('*', serveStatic({ root: './', manifest }));
 // SPA fallback - serve index.html for unmatched routes
 app.get('*', serveStatic({ path: './index.html', manifest }));
 
-export default app;
+export default {
+  fetch: app.fetch,
+  async scheduled(event: ScheduledEvent, env: Bindings, ctx: ExecutionContext) {
+    ctx.waitUntil(handleScheduled(env));
+  },
+};

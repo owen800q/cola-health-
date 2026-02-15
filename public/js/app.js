@@ -93,6 +93,14 @@ function showToast(msg) {
   setTimeout(function () { if (d.parentNode) document.body.removeChild(d); }, 1500);
 }
 
+/* ---------- Push helpers ---------- */
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = atob(base64);
+  return Uint8Array.from([...rawData].map(c => c.charCodeAt(0)));
+}
+
 /* ============================================================
  * VUE APP
  * ============================================================ */
@@ -553,6 +561,61 @@ const app = createApp({
       else { el.style.transform = ''; el.classList.remove('open'); }
     }
 
+    // ===== PUSH NOTIFICATIONS =====
+    const pushEnabled = ref(false);
+
+    async function setupPush() {
+      if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) return;
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        const existing = await reg.pushManager.getSubscription();
+        if (existing) { pushEnabled.value = true; return; }
+
+        const perm = Notification.permission;
+        if (perm === 'denied') return;
+        if (perm === 'default') return; // Wait for user to click the enable button
+        // If 'granted', subscribe
+        await subscribePush(reg);
+      } catch (e) { console.warn('Push setup:', e); }
+    }
+
+    async function subscribePush(reg) {
+      try {
+        const resp = await fetch('/api/push/vapid-key');
+        const { publicKey } = await resp.json();
+        if (!publicKey) return;
+
+        const vapidKey = urlBase64ToUint8Array(publicKey);
+        const sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: vapidKey,
+        });
+
+        await fetch('/api/push/subscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(sub.toJSON()),
+        });
+        pushEnabled.value = true;
+      } catch (e) { console.warn('Push subscribe:', e); }
+    }
+
+    async function enablePush() {
+      if (!('Notification' in window)) { showToast('此瀏覽器不支援通知'); return; }
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') { showToast('通知權限被拒絕'); return; }
+      const reg = await navigator.serviceWorker.ready;
+      await subscribePush(reg);
+      if (pushEnabled.value) showToast('推送通知已開啟');
+    }
+
+    async function testPush() {
+      try {
+        await fetch('/api/push/test', { method: 'POST' });
+        showToast('測試通知已發送');
+      } catch { showToast('發送失敗'); }
+    }
+
     // ===== LIFECYCLE =====
     onMounted(async () => {
       await loadBaby();
@@ -568,6 +631,7 @@ const app = createApp({
       loadDiaperHistory();
       loadSleepHistory();
       restoreSleepTimer();
+      setupPush();
     });
 
     onUnmounted(() => {
@@ -609,6 +673,8 @@ const app = createApp({
       swStart, swMove, swEnd,
       // Helpers
       fmtTime, fmtDate, fmtDuration, fmtDurCN, showToast, initTimes,
+      // Push
+      pushEnabled, enablePush, testPush,
     };
   },
   template: `
@@ -944,10 +1010,15 @@ const app = createApp({
   <!-- ===== SUB: REMINDERS ===== -->
   <div class="sub" :class="{active: activeSub === 'rm'}">
     <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">提醒及推送通知</span><div class="nb-ph"></div></div>
-    <div class="nt nc">
-      <span class="nn" style="color:var(--blue)"><svg><use href="#i-bell"/></svg></span>
-      <div class="nb2"><strong>推送通知</strong>開啟推送通知以接收餵奶、換片及疫苗提醒。需要授權瀏覽器通知權限。</div>
+    <div class="nt nc" v-if="pushEnabled">
+      <span class="nn" style="color:var(--green)"><svg><use href="#i-check"/></svg></span>
+      <div class="nb2"><strong>推送通知已開啟</strong> 你將會收到餵奶、換片及疫苗提醒。</div>
     </div>
+    <div class="nt nc" v-else @click="enablePush" style="cursor:pointer">
+      <span class="nn" style="color:var(--blue)"><svg><use href="#i-bell"/></svg></span>
+      <div class="nb2"><strong>點擊開啟推送通知</strong> 開啟推送通知以接收餵奶、換片及疫苗提醒。需要授權瀏覽器通知權限。</div>
+    </div>
+    <div v-if="pushEnabled" style="padding:0 16px 8px"><button class="btn-sub" @click="testPush" style="width:100%;padding:10px;border:1px solid var(--t4);border-radius:8px;background:var(--card);font-size:15px;color:var(--t1);cursor:pointer">發送測試通知</button></div>
     <div class="st">餵奶提醒</div>
     <div class="rm-card">
       <div class="rm-ico" style="background:#E8F4FD;color:var(--blue)"><svg><use href="#i-milk"/></svg></div>

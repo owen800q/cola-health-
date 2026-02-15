@@ -94,6 +94,12 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
   created_at TEXT DEFAULT (datetime('now'))
 );
 
+-- Notification dedup log (tracks last notification time per reminder type)
+CREATE TABLE IF NOT EXISTS notification_log (
+  reminder_type TEXT PRIMARY KEY,
+  last_notified_at TEXT NOT NULL
+);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_feeds_time ON feeds(time DESC);
 CREATE INDEX IF NOT EXISTS idx_diapers_time ON diapers(time DESC);
