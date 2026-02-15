@@ -1,0 +1,16 @@
+name = "baby-tracker"
+main = "worker/index.ts"
+compatibility_date = "2024-01-01"
+
+[site]
+bucket = "./public"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "baby-tracker-db"
+database_id = "placeholder-replace-with-actual-id"
+
+[vars]
+VAPID_PUBLIC_KEY = ""
+VAPID_PRIVATE_KEY = ""
+VAPID_SUBJECT = "mailto:admin@example.com"
