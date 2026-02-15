@@ -601,7 +601,9 @@ const app = createApp({
     }
 
     async function enablePush() {
+      if (!window.isSecureContext) { showToast('推送通知需要 HTTPS 安全連線'); return; }
       if (!('Notification' in window)) { showToast('此瀏覽器不支援通知'); return; }
+      if (!('PushManager' in window)) { showToast('此瀏覽器不支援推送'); return; }
       const perm = await Notification.requestPermission();
       if (perm !== 'granted') { showToast('通知權限被拒絕'); return; }
       const reg = await navigator.serviceWorker.ready;
@@ -610,9 +612,15 @@ const app = createApp({
     }
 
     async function testPush() {
+      if (!pushEnabled.value) {
+        await enablePush();
+        if (!pushEnabled.value) return;
+      }
       try {
-        await fetch('/api/push/test', { method: 'POST' });
-        showToast('測試通知已發送');
+        const resp = await fetch('/api/push/test', { method: 'POST' });
+        const data = await resp.json();
+        if (data.ok) showToast('測試通知已發送');
+        else showToast(data.error || '發送失敗');
       } catch { showToast('發送失敗'); }
     }
 
@@ -1018,7 +1026,7 @@ const app = createApp({
       <span class="nn" style="color:var(--blue)"><svg><use href="#i-bell"/></svg></span>
       <div class="nb2"><strong>點擊開啟推送通知</strong> 開啟推送通知以接收餵奶、換片及疫苗提醒。需要授權瀏覽器通知權限。</div>
     </div>
-    <div v-if="pushEnabled" style="padding:0 16px 8px"><button class="btn-sub" @click="testPush" style="width:100%;padding:10px;border:1px solid var(--t4);border-radius:8px;background:var(--card);font-size:15px;color:var(--t1);cursor:pointer">發送測試通知</button></div>
+    <div style="padding:0 16px 8px"><button class="btn-sub" @click="testPush" style="width:100%;padding:10px;border:1px solid var(--t4);border-radius:8px;background:var(--card);font-size:15px;color:var(--t1);cursor:pointer">發送測試通知</button></div>
     <div class="st">餵奶提醒</div>
     <div class="rm-card">
       <div class="rm-ico" style="background:#E8F4FD;color:var(--blue)"><svg><use href="#i-milk"/></svg></div>
