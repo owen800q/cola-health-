@@ -6,12 +6,7 @@ export async function handleScheduled(env: Bindings): Promise<void> {
   const db = env.DB;
 
   // Ensure notification_log table exists (dedup tracking)
-  await db.exec(`
-    CREATE TABLE IF NOT EXISTS notification_log (
-      reminder_type TEXT PRIMARY KEY,
-      last_notified_at TEXT NOT NULL
-    )
-  `);
+  await db.prepare('CREATE TABLE IF NOT EXISTS notification_log (reminder_type TEXT PRIMARY KEY, last_notified_at TEXT NOT NULL)').run();
 
   // Get enabled reminders
   const { results: reminders } = await db.prepare(
