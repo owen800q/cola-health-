@@ -287,11 +287,12 @@ const app = createApp({
     async function loadHomeData() {
       if (!store.babyId) return;
       try {
+        const range = localDayRange();
         const [feeds, diapers, sleeps, timeline] = await Promise.all([
-          API.getFeeds(store.babyId, { date: todayStr() }),
-          API.getDiapers(store.babyId, { date: todayStr() }),
-          API.getSleeps(store.babyId, { date: todayStr() }),
-          API.getTimeline(store.babyId, { limit: 10 }),
+          API.getFeeds(store.babyId, range),
+          API.getDiapers(store.babyId, range),
+          API.getSleeps(store.babyId, range),
+          API.getTimeline(store.babyId, range),
         ]);
         homeStats.feedCount = feeds?.length || 0;
         homeStats.feedTotal = feeds?.reduce((s, f) => s + (f.amount_ml || 0), 0) || 0;
@@ -334,14 +335,20 @@ const app = createApp({
       } catch (e) { console.warn('Home load error:', e); }
     }
 
+    function localDayRange() {
+      const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(); dayEnd.setHours(23, 59, 59, 999);
+      return { from: dayStart.toISOString(), to: dayEnd.toISOString() };
+    }
+
     async function loadFeedHistory() {
-      try { feedHistory.value = await API.getFeeds(store.babyId, { limit: 20 }) || []; } catch (e) { console.warn(e); }
+      try { feedHistory.value = await API.getFeeds(store.babyId, localDayRange()) || []; } catch (e) { console.warn(e); }
     }
     async function loadDiaperHistory() {
-      try { diaperHistory.value = await API.getDiapers(store.babyId, { limit: 20 }) || []; } catch (e) { console.warn(e); }
+      try { diaperHistory.value = await API.getDiapers(store.babyId, localDayRange()) || []; } catch (e) { console.warn(e); }
     }
     async function loadSleepHistory() {
-      try { sleepHistory.value = await API.getSleeps(store.babyId, { limit: 20 }) || []; } catch (e) { console.warn(e); }
+      try { sleepHistory.value = await API.getSleeps(store.babyId, localDayRange()) || []; } catch (e) { console.warn(e); }
     }
 
     // ===== FEED ACTIONS =====

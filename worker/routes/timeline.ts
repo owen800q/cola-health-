@@ -3,18 +3,33 @@ import type { Bindings } from '../index';
 
 export const timelineRoutes = new Hono<{ Bindings: Bindings }>();
 
-// GET /api/timeline?date=YYYY-MM-DD
+// GET /api/timeline?date=YYYY-MM-DD or ?from=ISO&to=ISO
 timelineRoutes.get('/', async (c) => {
   const db = c.env.DB;
-  const date = c.req.query('date') || new Date().toISOString().split('T')[0];
+  const from = c.req.query('from');
+  const to = c.req.query('to');
+
+  let feedQ: string, diaperQ: string, sleepQ: string;
+  let binds: string[];
+
+  if (from && to) {
+    // Local timezone-aware range query
+    feedQ = "SELECT id, time, amount_ml, note, 'feed' as record_type FROM feeds WHERE time >= ? AND time <= ? ORDER BY time DESC";
+    diaperQ = "SELECT id, time, type, color, texture, amount, note, 'diaper' as record_type FROM diapers WHERE time >= ? AND time <= ? ORDER BY time DESC";
+    sleepQ = "SELECT id, start_time as time, end_time, quality, note, 'sleep' as record_type FROM sleeps WHERE start_time >= ? AND start_time <= ? ORDER BY start_time DESC";
+    binds = [from, to];
+  } else {
+    const date = c.req.query('date') || new Date().toISOString().split('T')[0];
+    feedQ = "SELECT id, time, amount_ml, note, 'feed' as record_type FROM feeds WHERE date(time) = ? ORDER BY time DESC";
+    diaperQ = "SELECT id, time, type, color, texture, amount, note, 'diaper' as record_type FROM diapers WHERE date(time) = ? ORDER BY time DESC";
+    sleepQ = "SELECT id, start_time as time, end_time, quality, note, 'sleep' as record_type FROM sleeps WHERE date(start_time) = ? ORDER BY start_time DESC";
+    binds = [date];
+  }
 
   const [feeds, diapers, sleeps] = await Promise.all([
-    db.prepare("SELECT id, time, amount_ml, note, 'feed' as record_type FROM feeds WHERE date(time) = ? ORDER BY time DESC")
-      .bind(date).all(),
-    db.prepare("SELECT id, time, type, color, texture, amount, note, 'diaper' as record_type FROM diapers WHERE date(time) = ? ORDER BY time DESC")
-      .bind(date).all(),
-    db.prepare("SELECT id, start_time as time, end_time, quality, note, 'sleep' as record_type FROM sleeps WHERE date(start_time) = ? ORDER BY start_time DESC")
-      .bind(date).all(),
+    db.prepare(feedQ).bind(...binds).all(),
+    db.prepare(diaperQ).bind(...binds).all(),
+    db.prepare(sleepQ).bind(...binds).all(),
   ]);
 
   // Merge and sort by time DESC

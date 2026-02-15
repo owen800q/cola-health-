@@ -3,23 +3,49 @@ import type { Bindings } from '../index';
 
 export const sleepRoutes = new Hono<{ Bindings: Bindings }>();
 
-// GET /api/sleeps?date=YYYY-MM-DD
+// GET /api/sleeps?date=YYYY-MM-DD or ?from=ISO&to=ISO
 sleepRoutes.get('/', async (c) => {
   const db = c.env.DB;
-  const date = c.req.query('date') || new Date().toISOString().split('T')[0];
-  const sleeps = await db.prepare(
-    "SELECT * FROM sleeps WHERE date(start_time) = ? ORDER BY start_time DESC"
-  ).bind(date).all();
+  const from = c.req.query('from');
+  const to = c.req.query('to');
+
+  let query: string;
+  let binds: string[];
+
+  if (from && to) {
+    query = "SELECT * FROM sleeps WHERE start_time >= ? AND start_time <= ? ORDER BY start_time DESC";
+    binds = [from, to];
+  } else {
+    const date = c.req.query('date') || new Date().toISOString().split('T')[0];
+    query = "SELECT * FROM sleeps WHERE date(start_time) = ? ORDER BY start_time DESC";
+    binds = [date];
+  }
+
+  const sleeps = await db.prepare(query).bind(...binds).all();
   return c.json(sleeps.results);
 });
 
-// GET /api/sleeps/summary?date=YYYY-MM-DD
+// GET /api/sleeps/summary?date=YYYY-MM-DD or ?from=ISO&to=ISO
 sleepRoutes.get('/summary', async (c) => {
   const db = c.env.DB;
-  const date = c.req.query('date') || new Date().toISOString().split('T')[0];
+  const from = c.req.query('from');
+  const to = c.req.query('to');
+
+  let whereClause: string;
+  let binds: string[];
+
+  if (from && to) {
+    whereClause = "start_time >= ? AND start_time <= ?";
+    binds = [from, to];
+  } else {
+    const date = c.req.query('date') || new Date().toISOString().split('T')[0];
+    whereClause = "date(start_time) = ?";
+    binds = [date];
+  }
+
   const sleeps = await db.prepare(
-    "SELECT * FROM sleeps WHERE date(start_time) = ? AND end_time IS NOT NULL"
-  ).bind(date).all();
+    `SELECT * FROM sleeps WHERE ${whereClause} AND end_time IS NOT NULL`
+  ).bind(...binds).all();
 
   let totalMinutes = 0;
   let longestMinutes = 0;

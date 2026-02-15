@@ -3,28 +3,54 @@ import type { Bindings } from '../index';
 
 export const diaperRoutes = new Hono<{ Bindings: Bindings }>();
 
-// GET /api/diapers?date=YYYY-MM-DD
+// GET /api/diapers?date=YYYY-MM-DD or ?from=ISO&to=ISO
 diaperRoutes.get('/', async (c) => {
   const db = c.env.DB;
-  const date = c.req.query('date') || new Date().toISOString().split('T')[0];
-  const diapers = await db.prepare(
-    "SELECT * FROM diapers WHERE date(time) = ? ORDER BY time DESC"
-  ).bind(date).all();
+  const from = c.req.query('from');
+  const to = c.req.query('to');
+
+  let query: string;
+  let binds: string[];
+
+  if (from && to) {
+    query = "SELECT * FROM diapers WHERE time >= ? AND time <= ? ORDER BY time DESC";
+    binds = [from, to];
+  } else {
+    const date = c.req.query('date') || new Date().toISOString().split('T')[0];
+    query = "SELECT * FROM diapers WHERE date(time) = ? ORDER BY time DESC";
+    binds = [date];
+  }
+
+  const diapers = await db.prepare(query).bind(...binds).all();
   return c.json(diapers.results);
 });
 
-// GET /api/diapers/summary?date=YYYY-MM-DD
+// GET /api/diapers/summary?date=YYYY-MM-DD or ?from=ISO&to=ISO
 diaperRoutes.get('/summary', async (c) => {
   const db = c.env.DB;
-  const date = c.req.query('date') || new Date().toISOString().split('T')[0];
+  const from = c.req.query('from');
+  const to = c.req.query('to');
+
+  let whereClause: string;
+  let binds: string[];
+
+  if (from && to) {
+    whereClause = "time >= ? AND time <= ?";
+    binds = [from, to];
+  } else {
+    const date = c.req.query('date') || new Date().toISOString().split('T')[0];
+    whereClause = "date(time) = ?";
+    binds = [date];
+  }
+
   const summary = await db.prepare(`
     SELECT
       COUNT(*) as total,
       SUM(CASE WHEN type IN ('pee','both') THEN 1 ELSE 0 END) as pee_count,
       SUM(CASE WHEN type IN ('poo','both') THEN 1 ELSE 0 END) as poo_count,
       MAX(time) as last_change_time
-    FROM diapers WHERE date(time) = ?
-  `).bind(date).first();
+    FROM diapers WHERE ${whereClause}
+  `).bind(...binds).first();
   return c.json(summary);
 });
 

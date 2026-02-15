@@ -3,28 +3,54 @@ import type { Bindings } from '../index';
 
 export const feedRoutes = new Hono<{ Bindings: Bindings }>();
 
-// GET /api/feeds?date=YYYY-MM-DD
+// GET /api/feeds?date=YYYY-MM-DD or ?from=ISO&to=ISO
 feedRoutes.get('/', async (c) => {
   const db = c.env.DB;
-  const date = c.req.query('date') || new Date().toISOString().split('T')[0];
-  const feeds = await db.prepare(
-    "SELECT * FROM feeds WHERE date(time) = ? ORDER BY time DESC"
-  ).bind(date).all();
+  const from = c.req.query('from');
+  const to = c.req.query('to');
+
+  let query: string;
+  let binds: string[];
+
+  if (from && to) {
+    query = "SELECT * FROM feeds WHERE time >= ? AND time <= ? ORDER BY time DESC";
+    binds = [from, to];
+  } else {
+    const date = c.req.query('date') || new Date().toISOString().split('T')[0];
+    query = "SELECT * FROM feeds WHERE date(time) = ? ORDER BY time DESC";
+    binds = [date];
+  }
+
+  const feeds = await db.prepare(query).bind(...binds).all();
   return c.json(feeds.results);
 });
 
-// GET /api/feeds/summary?date=YYYY-MM-DD
+// GET /api/feeds/summary?date=YYYY-MM-DD or ?from=ISO&to=ISO
 feedRoutes.get('/summary', async (c) => {
   const db = c.env.DB;
-  const date = c.req.query('date') || new Date().toISOString().split('T')[0];
+  const from = c.req.query('from');
+  const to = c.req.query('to');
+
+  let whereClause: string;
+  let binds: string[];
+
+  if (from && to) {
+    whereClause = "time >= ? AND time <= ?";
+    binds = [from, to];
+  } else {
+    const date = c.req.query('date') || new Date().toISOString().split('T')[0];
+    whereClause = "date(time) = ?";
+    binds = [date];
+  }
+
   const summary = await db.prepare(`
     SELECT
       COUNT(*) as count,
       COALESCE(SUM(amount_ml), 0) as total_ml,
       COALESCE(ROUND(AVG(amount_ml), 0), 0) as avg_ml,
       MAX(time) as last_feed_time
-    FROM feeds WHERE date(time) = ?
-  `).bind(date).first();
+    FROM feeds WHERE ${whereClause}
+  `).bind(...binds).first();
   return c.json(summary);
 });
 
