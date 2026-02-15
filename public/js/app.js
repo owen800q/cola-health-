@@ -49,9 +49,9 @@ function calcDaysSinceBirth(birthday) {
   return Math.floor((now - birth) / (86400000));
 }
 function nowISO() { return new Date().toISOString(); }
-function todayStart() {
-  const d = new Date(); d.setHours(0, 0, 0, 0);
-  return d.toISOString();
+function todayStr() {
+  const d = new Date();
+  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
 }
 function fmtBirthday(birthday) {
   if (!birthday) return '';
@@ -150,6 +150,41 @@ const app = createApp({
       birth_weight: '', birth_height: '', blood_type: '',
     });
 
+    // Avatar
+    const avatarUrl = ref(localStorage.getItem('babyAvatar') || '');
+    function pickAvatar() {
+      const inp = document.createElement('input');
+      inp.type = 'file';
+      inp.accept = 'image/*';
+      inp.onchange = function () {
+        const file = inp.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function (ev) {
+          // Resize to keep localStorage small
+          const img = new Image();
+          img.onload = function () {
+            const canvas = document.createElement('canvas');
+            const size = 200;
+            canvas.width = size;
+            canvas.height = size;
+            const ctx = canvas.getContext('2d');
+            const min = Math.min(img.width, img.height);
+            const sx = (img.width - min) / 2;
+            const sy = (img.height - min) / 2;
+            ctx.drawImage(img, sx, sy, min, min, 0, 0, size, size);
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+            avatarUrl.value = dataUrl;
+            localStorage.setItem('babyAvatar', dataUrl);
+            showToast('頭像已更換');
+          };
+          img.src = ev.target.result;
+        };
+        reader.readAsDataURL(file);
+      };
+      inp.click();
+    }
+
     // Confirm dialog
     const dlgVisible = ref(false);
     const dlgTitle = ref('');
@@ -175,16 +210,16 @@ const app = createApp({
       if (!store.babyId) return;
       try {
         const [feeds, diapers, sleeps, timeline] = await Promise.all([
-          API.getFeeds(store.babyId, { date: todayStart() }),
-          API.getDiapers(store.babyId, { date: todayStart() }),
-          API.getSleeps(store.babyId, { date: todayStart() }),
+          API.getFeeds(store.babyId, { date: todayStr() }),
+          API.getDiapers(store.babyId, { date: todayStr() }),
+          API.getSleeps(store.babyId, { date: todayStr() }),
           API.getTimeline(store.babyId, { limit: 10 }),
         ]);
         homeStats.feedCount = feeds?.length || 0;
         homeStats.feedTotal = feeds?.reduce((s, f) => s + (f.amount_ml || 0), 0) || 0;
         homeStats.diaperTotal = diapers?.length || 0;
-        homeStats.diaperWet = diapers?.filter(d => d.type === 'wet' || d.type === 'both').length || 0;
-        homeStats.diaperDirty = diapers?.filter(d => d.type === 'dirty' || d.type === 'both').length || 0;
+        homeStats.diaperWet = diapers?.filter(d => d.type === 'pee' || d.type === 'both').length || 0;
+        homeStats.diaperDirty = diapers?.filter(d => d.type === 'poo' || d.type === 'both').length || 0;
         homeStats.sleepCount = sleeps?.length || 0;
         let totalMin = 0, longestMin = 0;
         sleeps?.forEach(sl => {
@@ -199,21 +234,24 @@ const app = createApp({
         // Build recent items
         recentItems.value = (timeline || []).slice(0, 8).map(e => {
           let icon = 'milk', cls = 'milk', title = '', detail = '', vol = '';
-          if (e.type === 'feed') {
+          if (e.record_type === 'feed') {
             icon = 'i-milk'; cls = 'milk';
-            title = e.feed_type === 'breast' ? '母乳' : '配方奶';
-            detail = e.notes || '';
+            title = '配方奶';
+            detail = e.note || '';
             vol = e.amount_ml ? e.amount_ml + 'ml' : '';
-          } else if (e.type === 'diaper') {
-            const dt = e.diaper_type || e.type_detail;
-            if (dt === 'dirty' || dt === 'both') { icon = 'i-poo'; cls = 'poo'; title = dt === 'both' ? '大便 + 小便' : '大便'; }
+          } else if (e.record_type === 'diaper') {
+            const dt = e.type;
+            if (dt === 'poo' || dt === 'both') { icon = 'i-poo'; cls = 'poo'; title = dt === 'both' ? '大便 + 小便' : '大便'; }
             else { icon = 'i-drop'; cls = 'pee'; title = '小便'; }
-            detail = e.notes || (e.color ? e.color : '');
-          } else if (e.type === 'sleep') {
-            if (e.end_time) { icon = 'i-sun'; cls = 'slp'; title = '醒咗'; detail = e.duration ? '瞓咗 ' + fmtDurCN(e.duration) : ''; }
-            else { icon = 'i-moon'; cls = 'slp'; title = '瞓著咗'; }
+            detail = e.note || (e.color ? e.color : '');
+          } else if (e.record_type === 'sleep') {
+            if (e.end_time) {
+              icon = 'i-sun'; cls = 'slp'; title = '醒咗';
+              const dur = Math.floor((new Date(e.end_time) - new Date(e.time)) / 1000);
+              detail = dur > 60 ? '瞓咗 ' + fmtDurCN(dur) : '';
+            } else { icon = 'i-moon'; cls = 'slp'; title = '瞓著咗'; }
           }
-          return { id: e.id, type: e.type, icon, cls, title, detail, vol, time: fmtTime(e.time) };
+          return { id: e.id, type: e.record_type, icon, cls, title, detail, vol, time: fmtTime(e.time) };
         });
       } catch (e) { console.warn('Home load error:', e); }
     }
@@ -242,12 +280,9 @@ const app = createApp({
           now.setHours(parseInt(h), parseInt(m), 0, 0);
         }
         await API.createFeed({
-          baby_id: store.babyId,
-          feed_type: 'bottle',
-          start_time: now.toISOString(),
+          time: now.toISOString(),
           amount_ml: feedAmount.value,
-          formula_type: feedType.value === 'formula' ? '配方奶' : '母乳',
-          notes: feedNotes.value || null,
+          note: feedNotes.value || null,
         });
         showToast('餵奶記錄已儲存');
         feedNotes.value = '';
@@ -280,14 +315,13 @@ const app = createApp({
           const [h, m] = diaperTime.value.split(':');
           now.setHours(parseInt(h), parseInt(m), 0, 0);
         }
-        const typeMap = { pee: 'wet', poo: 'dirty', both: 'both', dry: 'dry' };
         await API.createDiaper({
-          baby_id: store.babyId,
-          type: typeMap[diaperType.value] || diaperType.value,
+          time: now.toISOString(),
+          type: diaperType.value,
           color: showPooFields() ? diaperColor.value : null,
-          consistency: showPooFields() ? diaperConsistency.value : null,
-          notes: diaperNotes.value || null,
-          changed_at: now.toISOString(),
+          texture: showPooFields() ? diaperConsistency.value : null,
+          amount: showPooFields() ? diaperAmount.value : null,
+          note: diaperNotes.value || null,
         });
         showToast('換片記錄已儲存');
         diaperNotes.value = '';
@@ -339,10 +373,9 @@ const app = createApp({
         localStorage.removeItem('sleepTimer');
         if (sleepSeconds.value < 60) { sleepSeconds.value = 0; return; }
         API.createSleep({
-          baby_id: store.babyId,
           start_time: sleepStartISO.value,
           end_time: nowISO(),
-          notes: null,
+          note: null,
         }).then(() => {
           showToast('睡眠記錄已儲存');
           sleepSeconds.value = 0;
@@ -367,10 +400,9 @@ const app = createApp({
         end.setHours(parseInt(eh), parseInt(em), 0, 0);
         if (end <= start) end.setDate(end.getDate() + 1);
         await API.createSleep({
-          baby_id: store.babyId,
           start_time: start.toISOString(),
           end_time: end.toISOString(),
-          notes: sleepNotes.value || null,
+          note: sleepNotes.value || null,
         });
         showToast('睡眠記錄已儲存');
         closeSub();
@@ -435,8 +467,8 @@ const app = createApp({
     // Diaper summary computed
     const diaperSummary = computed(() => {
       const items = diaperHistory.value;
-      const wet = items.filter(d => d.type === 'wet' || d.type === 'both').length;
-      const dirty = items.filter(d => d.type === 'dirty' || d.type === 'both').length;
+      const wet = items.filter(d => d.type === 'pee' || d.type === 'both').length;
+      const dirty = items.filter(d => d.type === 'poo' || d.type === 'both').length;
       return { wet, dirty, total: items.length };
     });
 
@@ -469,26 +501,25 @@ const app = createApp({
 
     // Computed feed/diaper label helpers
     function feedItemType(item) {
-      if (item.feed_type === 'breast') return '母乳';
-      return item.formula_type || '配方奶';
+      return '配方奶';
     }
     function diaperItemLabel(item) {
-      const map = { wet: '小便', dirty: '大便', both: '大便 + 小便', dry: '乾淨' };
+      const map = { pee: '小便', poo: '大便', both: '大便 + 小便', dry: '乾淨' };
       return map[item.type] || item.type;
     }
     function diaperItemIcon(item) {
-      if (item.type === 'dirty' || item.type === 'both') return 'i-poo';
+      if (item.type === 'poo' || item.type === 'both') return 'i-poo';
       return 'i-drop';
     }
     function diaperItemCls(item) {
-      if (item.type === 'dirty' || item.type === 'both') return 'poo';
+      if (item.type === 'poo' || item.type === 'both') return 'poo';
       return 'pee';
     }
     function diaperItemDetail(item) {
       const parts = [];
       if (item.color) parts.push(item.color);
-      if (item.consistency) parts.push(item.consistency);
-      if (item.notes) parts.push(item.notes);
+      if (item.texture) parts.push(item.texture);
+      if (item.note) parts.push(item.note);
       return parts.join('、') || '';
     }
 
@@ -520,7 +551,7 @@ const app = createApp({
       // Nav
       currentPage, activeSub, go, openSub, closeSub,
       // Baby
-      baby, babyName, babyAge, babyBirthday, daysSinceBirth,
+      baby, babyName, babyAge, babyBirthday, daysSinceBirth, avatarUrl, pickAvatar,
       // Home
       homeStats, recentItems, dateStr,
       // Feed
@@ -561,7 +592,7 @@ const app = createApp({
   <!-- ===== HOME ===== -->
   <div class="page" :class="{active: currentPage === 0}">
     <div class="hero">
-      <div class="av"><svg><use href="#i-baby"/></svg></div>
+      <div class="av" @click="pickAvatar"><img v-if="avatarUrl" :src="avatarUrl"><svg v-else><use href="#i-baby"/></svg></div>
       <div class="inf">
         <h2>{{ babyName }}</h2>
         <p>出生 {{ daysSinceBirth }} 天 · {{ babyBirthday }}</p>
@@ -609,7 +640,7 @@ const app = createApp({
         <div class="ri milk"><svg><use href="#i-milk"/></svg></div>
         <div class="cb">
           <div class="ct">{{ feedItemType(item) }}</div>
-          <div class="cd">{{ fmtTime(item.start_time) }}<template v-if="item.notes"> · {{ item.notes }}</template></div>
+          <div class="cd">{{ fmtTime(item.time) }}<template v-if="item.note"> · {{ item.note }}</template></div>
         </div>
         <div class="cr">
           <div class="cv" v-if="item.amount_ml">{{ item.amount_ml }}ml</div>
@@ -637,7 +668,7 @@ const app = createApp({
           <div class="cd" v-if="diaperItemDetail(item)">{{ diaperItemDetail(item) }}</div>
         </div>
         <div class="cr">
-          <div class="cm">{{ fmtTime(item.changed_at) }}</div>
+          <div class="cm">{{ fmtTime(item.time) }}</div>
           <div class="cm" style="color:var(--red);cursor:pointer;margin-top:4px" @click="deleteDiaper(item.id)"><svg style="width:14px;height:14px"><use href="#i-trash"/></svg></div>
         </div>
       </div>
@@ -685,7 +716,7 @@ const app = createApp({
   <!-- ===== SETTINGS ===== -->
   <div class="page" :class="{active: currentPage === 4}">
     <div class="hero">
-      <div class="av"><svg><use href="#i-baby"/></svg></div>
+      <div class="av" @click="pickAvatar"><img v-if="avatarUrl" :src="avatarUrl"><svg v-else><use href="#i-baby"/></svg></div>
       <div class="inf">
         <h2>{{ babyName }}</h2>
         <p>{{ babyBirthday }}出生 · {{ daysSinceBirth }}日大</p>
@@ -775,8 +806,9 @@ const app = createApp({
   <div class="sub" :class="{active: activeSub === 'pf'}">
     <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">{{ babyName }}基本資料</span><div class="nb-ph"></div></div>
     <div style="display:flex;flex-direction:column;align-items:center;padding:24px 16px 8px">
-      <div class="av" style="width:80px;height:80px;background:rgba(0,0,0,0.06);color:var(--t3);cursor:pointer;border-radius:50%;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative">
-        <svg style="width:36px;height:36px"><use href="#i-baby"/></svg>
+      <div class="av" @click="pickAvatar" style="width:80px;height:80px;background:rgba(0,0,0,0.06);color:var(--t3);cursor:pointer;border-radius:50%;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative">
+        <img v-if="avatarUrl" :src="avatarUrl" style="width:100%;height:100%;object-fit:cover">
+        <svg v-else style="width:36px;height:36px"><use href="#i-baby"/></svg>
       </div>
       <span style="font-size:13px;color:var(--t2);margin-top:8px">點擊更換頭像</span>
     </div>
