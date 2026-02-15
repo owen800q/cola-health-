@@ -26,10 +26,10 @@
 
   window.API = {
     // ---- Baby ----
-    getBabies: () => request('/baby'),
-    getBaby: (id) => request('/baby/' + id),
-    createBaby: (data) => request('/baby', { method: 'POST', body: data }),
-    updateBaby: (id, data) => request('/baby/' + id, { method: 'PUT', body: data }),
+    getBaby: () => request('/baby'),
+    updateBaby: (data) => request('/baby', { method: 'PUT', body: data }),
+    uploadAvatar: (data) => request('/baby/avatar', { method: 'POST', body: data }),
+    initBaby: () => request('/baby/init', { method: 'POST', body: {} }),
 
     // ---- Feeds ----
     getFeeds: (babyId, params) => {

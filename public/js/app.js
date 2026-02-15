@@ -74,10 +74,10 @@ const store = reactive({
 
 async function loadBaby() {
   try {
-    const list = await API.getBabies();
-    if (list && list.length > 0) {
-      store.baby = store.babyId ? list.find(b => b.id == store.babyId) || list[0] : list[0];
-      store.babyId = store.baby.id;
+    const baby = await API.getBaby();
+    if (baby && baby.id) {
+      store.baby = baby;
+      store.babyId = baby.id;
       localStorage.setItem('currentBabyId', store.babyId);
     }
   } catch (e) {
@@ -105,9 +105,9 @@ const app = createApp({
     // Data state
     const baby = computed(() => store.baby);
     const babyName = computed(() => baby.value?.name || '可樂仔');
-    const babyAge = computed(() => calcAge(baby.value?.birthday));
-    const babyBirthday = computed(() => fmtBirthday(baby.value?.birthday));
-    const daysSinceBirth = computed(() => calcDaysSinceBirth(baby.value?.birthday));
+    const babyAge = computed(() => calcAge(baby.value?.birth_date));
+    const babyBirthday = computed(() => fmtBirthday(baby.value?.birth_date));
+    const daysSinceBirth = computed(() => calcDaysSinceBirth(baby.value?.birth_date));
 
     // Home page stats
     const homeStats = reactive({
@@ -427,9 +427,9 @@ const app = createApp({
       if (store.baby) {
         profileForm.name = store.baby.name || '';
         profileForm.gender = store.baby.gender === 'F' ? '女' : '男';
-        profileForm.birthday = store.baby.birthday || '';
-        profileForm.birth_weight = store.baby.birth_weight_kg ? store.baby.birth_weight_kg + ' kg' : '';
-        profileForm.birth_height = store.baby.birth_height_cm ? store.baby.birth_height_cm + ' cm' : '';
+        profileForm.birthday = store.baby.birth_date || '';
+        profileForm.birth_weight = store.baby.birth_weight || '';
+        profileForm.birth_height = store.baby.birth_height || '';
       }
     }
 
@@ -439,12 +439,12 @@ const app = createApp({
         const genderMap = { '男': 'M', '女': 'F' };
         const wt = parseFloat(profileForm.birth_weight);
         const ht = parseFloat(profileForm.birth_height);
-        await API.updateBaby(store.babyId, {
+        await API.updateBaby({
           name: profileForm.name,
-          birthday: profileForm.birthday || null,
+          birth_date: profileForm.birthday || null,
           gender: genderMap[profileForm.gender] || null,
-          birth_weight_kg: isNaN(wt) ? null : wt,
-          birth_height_cm: isNaN(ht) ? null : ht,
+          birth_weight: isNaN(wt) ? null : wt,
+          birth_height: isNaN(ht) ? null : ht,
         });
         showToast('資料已更新');
         closeSub();
