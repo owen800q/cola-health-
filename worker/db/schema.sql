@@ -109,7 +109,7 @@ CREATE INDEX IF NOT EXISTS idx_growth_date ON growth(date DESC);
 
 -- Seed default baby profile
 INSERT OR IGNORE INTO baby (id, name, gender, birth_date, birth_weight, birth_height)
-VALUES (1, '可樂仔', 'M', '2025-01-25', 3.2, 50.0);
+VALUES (1, '可樂仔', 'M', '2026-01-16', 3.2, 50.0);
 
 -- Seed default reminder settings
 INSERT OR IGNORE INTO reminders (id, type, enabled, interval_minutes) VALUES (1, 'feed', 1, 180);

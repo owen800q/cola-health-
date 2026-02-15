@@ -152,6 +152,72 @@ const app = createApp({
     const sleepQuality = ref('好 · 瞓得穩');
     const sleepNotes = ref('');
 
+    // Vaccine page
+    const vaccines = ref([]);
+    const vaccineGroups = computed(() => {
+      const groups = [];
+      const labels = { 0: '初生', 1: '一個月', 2: '兩個月', 4: '四個月', 6: '六個月', 12: '一歲', 18: '一歲半', 48: '小學一年級' };
+      const monthMap = {};
+      if (!store.baby?.birth_date) return groups;
+      const bd = new Date(store.baby.birth_date);
+      for (const v of vaccines.value) {
+        const sd = new Date(v.scheduled_date);
+        let diffMonths = (sd.getFullYear() - bd.getFullYear()) * 12 + (sd.getMonth() - bd.getMonth());
+        if (diffMonths < 0) diffMonths = 0;
+        // Snap to nearest milestone
+        const milestones = [0, 1, 2, 4, 6, 12, 18, 48];
+        let best = 0;
+        for (const m of milestones) { if (Math.abs(diffMonths - m) <= Math.abs(diffMonths - best)) best = m; }
+        if (!monthMap[best]) { monthMap[best] = { label: labels[best] || best + '個月', items: [] }; groups.push(monthMap[best]); }
+        monthMap[best].items.push(v);
+      }
+      return groups;
+    });
+
+    async function loadVaccines() {
+      try { vaccines.value = await API.getVaccines(store.babyId) || []; } catch (e) { console.warn('Load vaccines:', e); }
+    }
+
+    function fmtVaccineDate(v) {
+      const d = new Date(v.actual_date || v.scheduled_date);
+      return d.getFullYear() + '年' + (d.getMonth() + 1) + '月' + d.getDate() + '日';
+    }
+
+    function vaccineStatusCls(v) {
+      if (v.status === 'done') return 'tg-g';
+      if (v.status === 'overdue') return 'tg-r';
+      return 'tg-o';
+    }
+
+    function vaccineStatusText(v) {
+      if (v.status === 'done') return '已完成';
+      if (v.status === 'overdue') return '已過期';
+      return '待接種';
+    }
+
+    function vaccineIcon(v) {
+      if (v.status === 'done') return '#i-check';
+      if (v.status === 'overdue') return '#i-alert';
+      return '#i-shield';
+    }
+
+    function vaccineIconColor(v) {
+      if (v.status === 'done') return 'color:var(--green)';
+      if (v.status === 'overdue') return 'color:var(--red)';
+      return 'color:var(--t3)';
+    }
+
+    function vaccineDesc(v) {
+      if (v.status === 'done') return '已接種 · ' + fmtVaccineDate(v) + (v.location ? ' · ' + v.location : '');
+      return '建議：' + fmtVaccineDate(v);
+    }
+
+    function vaccineName(v) {
+      let name = v.name;
+      if (v.dose) name += ' — ' + v.dose;
+      return name;
+    }
+
     // Settings / Profile
     const profileForm = reactive({
       name: '', gender: '男', birthday: '',
@@ -214,7 +280,7 @@ const app = createApp({
 
     // Navigation
     function go(i) { currentPage.value = i; }
-    function openSub(name) { activeSub.value = name; }
+    function openSub(name) { activeSub.value = name; if (name === 'he') loadVaccines(); }
     function closeSub() { activeSub.value = null; }
 
     // ===== DATA LOADING =====
@@ -723,6 +789,8 @@ const app = createApp({
       toggleSleep, saveManualSleep, deleteSleep,
       manualSleepStart, manualSleepEnd, sleepQuality, sleepNotes,
       sleepSummaryData,
+      // Vaccines
+      vaccines, vaccineGroups, vaccineDesc, vaccineName, vaccineStatusCls, vaccineStatusText, vaccineIcon, vaccineIconColor,
       // Profile
       profileForm, saveProfile, loadProfile,
       // Dialog
@@ -1018,28 +1086,16 @@ const app = createApp({
   <div class="sub" :class="{active: activeSub === 'he'}">
     <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">疫苗接種計劃</span><div class="nb-ph"></div></div>
     <div class="nt nc"><span class="nn" style="color:var(--blue)"><svg><use href="#i-info"/></svg></span><div class="nb2">根據衞生署「香港兒童免疫接種計劃」。<br>來源：<span style="color:var(--blue)">fhs.gov.hk</span></div></div>
-    <div class="st">初生</div>
-    <div class="cs">
-      <div class="cl"><span class="ci" style="color:var(--green)"><svg><use href="#i-check"/></svg></span><div class="cb"><div class="ct">卡介苗 (BCG)</div><div class="cd">已接種 · 2025年1月26日</div></div><div class="cr row"><span class="tg tg-g">已完成</span></div></div>
-      <div class="cl"><span class="ci" style="color:var(--green)"><svg><use href="#i-check"/></svg></span><div class="cb"><div class="ct">乙型肝炎疫苗 — 第一次</div><div class="cd">已接種 · 2025年1月26日</div></div><div class="cr row"><span class="tg tg-g">已完成</span></div></div>
-    </div>
-    <div class="st">一個月</div>
-    <div class="cs"><div class="cl"><span class="ci" style="color:var(--warn)"><svg><use href="#i-shield"/></svg></span><div class="cb"><div class="ct">乙型肝炎疫苗 — 第二次</div><div class="cd">建議：2025年2月25日</div></div><div class="cr row"><span class="tg tg-o">待接種</span></div></div></div>
-    <div class="st">兩個月</div>
-    <div class="cs">
-      <div class="cl"><span class="ci" style="color:var(--t3)"><svg><use href="#i-shield"/></svg></span><div class="cb"><div class="ct">白喉、破傷風、無細胞型百日咳及滅活小兒麻痺混合疫苗 — 第一次</div><div class="cd">建議：2025年3月25日</div></div></div>
-      <div class="cl"><span class="ci" style="color:var(--t3)"><svg><use href="#i-shield"/></svg></span><div class="cb"><div class="ct">肺炎球菌疫苗 — 第一次</div><div class="cd">建議：2025年3月25日</div></div></div>
-    </div>
-    <div class="st">四個月</div>
-    <div class="cs">
-      <div class="cl"><span class="ci" style="color:var(--t3)"><svg><use href="#i-shield"/></svg></span><div class="cb"><div class="ct">四合一混合疫苗 — 第二次</div><div class="cd">建議：2025年5月25日</div></div></div>
-      <div class="cl"><span class="ci" style="color:var(--t3)"><svg><use href="#i-shield"/></svg></span><div class="cb"><div class="ct">肺炎球菌疫苗 — 第二次</div><div class="cd">建議：2025年5月25日</div></div></div>
-    </div>
-    <div class="st">六個月</div>
-    <div class="cs">
-      <div class="cl"><span class="ci" style="color:var(--t3)"><svg><use href="#i-shield"/></svg></span><div class="cb"><div class="ct">四合一混合疫苗 — 第三次</div><div class="cd">建議：2025年7月25日</div></div></div>
-      <div class="cl"><span class="ci" style="color:var(--t3)"><svg><use href="#i-shield"/></svg></span><div class="cb"><div class="ct">乙型肝炎疫苗 — 第三次</div><div class="cd">建議：2025年7月25日</div></div></div>
-    </div>
+    <template v-for="group in vaccineGroups" :key="group.label">
+      <div class="st">{{ group.label }}</div>
+      <div class="cs">
+        <div class="cl" v-for="v in group.items" :key="v.id">
+          <span class="ci" :style="vaccineIconColor(v)"><svg><use :href="vaccineIcon(v)"/></svg></span>
+          <div class="cb"><div class="ct">{{ vaccineName(v) }}</div><div class="cd">{{ vaccineDesc(v) }}</div></div>
+          <div class="cr row"><span class="tg" :class="vaccineStatusCls(v)">{{ vaccineStatusText(v) }}</span></div>
+        </div>
+      </div>
+    </template>
     <div class="nt ni"><span class="nn" style="color:var(--warn)"><svg><use href="#i-warn"/></svg></span><div class="nb2"><strong>蠶豆病提醒</strong>接種後如需退燒藥，切勿用阿士匹靈，可用撲熱息痛。發高燒 (40°C+) 請即就醫。</div></div>
     <div style="height:32px"></div>
   </div>
