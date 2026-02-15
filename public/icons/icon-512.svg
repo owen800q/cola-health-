@@ -1,10 +1,86 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#10AEFF"/>
-      <stop offset="100%" style="stop-color:#1dc7ea"/>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#87CEEB"/>
+      <stop offset="100%" stop-color="#B8E4F9"/>
     </linearGradient>
+    <clipPath id="rr"><rect width="512" height="512" rx="100"/></clipPath>
   </defs>
-  <rect width="512" height="512" rx="100" fill="url(#bg)"/>
-  <text x="256" y="310" text-anchor="middle" font-size="260" fill="white">🍼</text>
+  <!-- Background -->
+  <rect width="512" height="512" rx="100" fill="url(#sky)"/>
+  <g clip-path="url(#rr)">
+    <!-- Clouds -->
+    <g fill="white" opacity="0.7">
+      <ellipse cx="90" cy="100" rx="58" ry="30"/>
+      <ellipse cx="145" cy="90" rx="48" ry="26"/>
+      <ellipse cx="410" cy="140" rx="62" ry="28"/>
+      <ellipse cx="360" cy="128" rx="42" ry="24"/>
+      <ellipse cx="240" cy="70" rx="36" ry="20"/>
+    </g>
+    <!-- Green ground -->
+    <ellipse cx="256" cy="495" rx="290" ry="120" fill="#7EC850"/>
+    <ellipse cx="256" cy="475" rx="270" ry="95" fill="#8DD460"/>
+    <!-- Bottle cap (red) -->
+    <g transform="translate(256,373)">
+      <!-- Cap body -->
+      <rect x="-90" y="-32" width="180" height="74" rx="12" fill="#E53935"/>
+      <!-- Cap ridges -->
+      <rect x="-94" y="-26" width="7" height="64" rx="3.5" fill="#C62828"/>
+      <rect x="-76" y="-26" width="7" height="64" rx="3.5" fill="#C62828"/>
+      <rect x="-58" y="-26" width="7" height="64" rx="3.5" fill="#C62828"/>
+      <rect x="-40" y="-26" width="7" height="64" rx="3.5" fill="#C62828"/>
+      <rect x="-22" y="-26" width="7" height="64" rx="3.5" fill="#C62828"/>
+      <rect x="-4" y="-26" width="7" height="64" rx="3.5" fill="#C62828"/>
+      <rect x="14" y="-26" width="7" height="64" rx="3.5" fill="#C62828"/>
+      <rect x="32" y="-26" width="7" height="64" rx="3.5" fill="#C62828"/>
+      <rect x="50" y="-26" width="7" height="64" rx="3.5" fill="#C62828"/>
+      <rect x="68" y="-26" width="7" height="64" rx="3.5" fill="#C62828"/>
+      <rect x="86" y="-26" width="7" height="64" rx="3.5" fill="#C62828"/>
+      <!-- Cap top highlight -->
+      <rect x="-80" y="-32" width="160" height="16" rx="8" fill="#EF5350" opacity="0.5"/>
+    </g>
+    <!-- Baby body -->
+    <g transform="translate(256,272)">
+      <!-- Body / onesie -->
+      <ellipse cx="0" cy="52" rx="58" ry="64" fill="#FFE0B2"/>
+      <path d="M-53,20 Q-58,78 -37,100 L37,100 Q58,78 53,20 Z" fill="#BBDEFB"/>
+      <!-- Diaper area -->
+      <ellipse cx="0" cy="95" rx="42" ry="22" fill="white"/>
+      <!-- Arms -->
+      <g fill="#FFE0B2">
+        <ellipse cx="-64" cy="36" rx="18" ry="13" transform="rotate(-20,-64,36)"/>
+        <ellipse cx="64" cy="36" rx="18" ry="13" transform="rotate(20,64,36)"/>
+      </g>
+      <!-- Legs -->
+      <g fill="#FFE0B2">
+        <ellipse cx="-26" cy="110" rx="16" ry="22"/>
+        <ellipse cx="26" cy="110" rx="16" ry="22"/>
+      </g>
+      <!-- Feet -->
+      <ellipse cx="-32" cy="128" rx="16" ry="10" fill="#FFE0B2"/>
+      <ellipse cx="32" cy="128" rx="16" ry="10" fill="#FFE0B2"/>
+    </g>
+    <!-- Baby head -->
+    <g transform="translate(256,192)">
+      <!-- Head -->
+      <circle cx="0" cy="0" r="64" fill="#FFE0B2"/>
+      <!-- Hair tuft -->
+      <path d="M-13,-64 Q0,-85 13,-64 Q5,-74 -5,-74 Z" fill="#5D4037"/>
+      <path d="M-22,-58 Q-10,-80 0,-58" fill="none" stroke="#5D4037" stroke-width="6.5" stroke-linecap="round"/>
+      <path d="M0,-64 Q10,-82 22,-58" fill="none" stroke="#5D4037" stroke-width="6.5" stroke-linecap="round"/>
+      <!-- Eyes -->
+      <circle cx="-21" cy="-5" r="9" fill="#333"/>
+      <circle cx="21" cy="-5" r="9" fill="#333"/>
+      <circle cx="-18" cy="-8" r="3.2" fill="white"/>
+      <circle cx="24" cy="-8" r="3.2" fill="white"/>
+      <!-- Blush -->
+      <ellipse cx="-37" cy="13" rx="13" ry="8" fill="#FFAB91" opacity="0.5"/>
+      <ellipse cx="37" cy="13" rx="13" ry="8" fill="#FFAB91" opacity="0.5"/>
+      <!-- Mouth (smile) -->
+      <path d="M-10,18 Q0,32 10,18" fill="none" stroke="#333" stroke-width="4" stroke-linecap="round"/>
+      <!-- Ears -->
+      <circle cx="-61" cy="0" r="10" fill="#FFD5A0"/>
+      <circle cx="61" cy="0" r="10" fill="#FFD5A0"/>
+    </g>
+  </g>
 </svg>
