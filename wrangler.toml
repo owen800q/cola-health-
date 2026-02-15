@@ -8,7 +8,7 @@ bucket = "./public"
 [[d1_databases]]
 binding = "DB"
 database_name = "baby-tracker-db"
-database_id = "placeholder-replace-with-actual-id"
+database_id = "3a398a37-964c-45c3-906f-cdf5f8ed6562"
 
 [vars]
 VAPID_PUBLIC_KEY = ""
