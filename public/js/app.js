@@ -439,17 +439,23 @@ const app = createApp({
         const genderMap = { '男': 'M', '女': 'F' };
         const wt = parseFloat(profileForm.birth_weight);
         const ht = parseFloat(profileForm.birth_height);
+        const baby = store.baby || {};
         await API.updateBaby({
           name: profileForm.name,
           birth_date: profileForm.birthday || null,
           gender: genderMap[profileForm.gender] || null,
           birth_weight: isNaN(wt) ? null : wt,
           birth_height: isNaN(ht) ? null : ht,
+          blood_type: baby.blood_type ?? null,
+          has_g6pd: baby.has_g6pd ?? null,
+          hospital: baby.hospital ?? null,
+          doctor_name: baby.doctor_name ?? null,
+          doctor_phone: baby.doctor_phone ?? null,
         });
         showToast('資料已更新');
         closeSub();
         await loadBaby();
-      } catch (e) { showToast('儲存失敗'); }
+      } catch (e) { console.error('saveProfile error:', e); showToast('儲存失敗'); }
     }
 
     // Date nav
