@@ -1,0 +1,462 @@
+/* ===== Global ===== */
+:root {
+  --app-bg: #f7f8fa;
+  --brand: #10AEFF;
+  --brand-light: #e8f7ff;
+  --feed-color: #ff976a;
+  --diaper-color: #07c160;
+  --sleep-color: #7232dd;
+  --growth-color: #1989fa;
+  --vaccine-color: #ee0a24;
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--app-bg);
+  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior-y: contain;
+}
+
+#app {
+  min-height: 100vh;
+  padding-bottom: 50px;
+}
+
+/* ===== Dashboard ===== */
+.dashboard-header {
+  background: linear-gradient(135deg, var(--brand) 0%, #1dc7ea 100%);
+  padding: 20px 16px 30px;
+  color: #fff;
+  border-radius: 0 0 24px 24px;
+  position: relative;
+}
+
+.baby-info {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.baby-avatar {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  border: 3px solid rgba(255,255,255,0.5);
+}
+
+.baby-name {
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.baby-age {
+  font-size: 13px;
+  opacity: 0.85;
+  margin-top: 2px;
+}
+
+/* Summary Cards */
+.summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 0 16px;
+  margin-top: -20px;
+  position: relative;
+  z-index: 1;
+}
+
+.summary-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 14px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+}
+
+.summary-card__icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  margin-bottom: 8px;
+}
+
+.summary-card__icon--feed { background: #fff3e8; color: var(--feed-color); }
+.summary-card__icon--diaper { background: #e8f8ee; color: var(--diaper-color); }
+.summary-card__icon--sleep { background: #f0e8ff; color: var(--sleep-color); }
+.summary-card__icon--growth { background: #e8f0ff; color: var(--growth-color); }
+
+.summary-card__value {
+  font-size: 22px;
+  font-weight: 700;
+  color: #323233;
+}
+
+.summary-card__label {
+  font-size: 12px;
+  color: #969799;
+  margin-top: 2px;
+}
+
+.summary-card__sub {
+  font-size: 11px;
+  color: #c8c9cc;
+  margin-top: 4px;
+}
+
+/* Quick Actions */
+.quick-actions {
+  padding: 16px;
+}
+
+.quick-actions .van-grid-item__content {
+  padding: 12px 8px;
+}
+
+.quick-action-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  margin-bottom: 6px;
+}
+
+.quick-action-icon--breast { background: #fff3e8; color: var(--feed-color); }
+.quick-action-icon--bottle { background: #fff3e8; color: #ff6034; }
+.quick-action-icon--diaper { background: #e8f8ee; color: var(--diaper-color); }
+.quick-action-icon--sleep { background: #f0e8ff; color: var(--sleep-color); }
+.quick-action-icon--growth { background: #e8f0ff; color: var(--growth-color); }
+.quick-action-icon--vaccine { background: #ffe8ea; color: var(--vaccine-color); }
+
+/* Section Titles */
+.section-title {
+  padding: 16px 16px 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #323233;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.section-title__more {
+  font-size: 13px;
+  color: #969799;
+  font-weight: 400;
+}
+
+/* ===== Timer ===== */
+.timer-display {
+  text-align: center;
+  padding: 30px 0;
+}
+
+.timer-time {
+  font-size: 52px;
+  font-weight: 200;
+  font-variant-numeric: tabular-nums;
+  color: #323233;
+  letter-spacing: 2px;
+}
+
+.timer-label {
+  font-size: 14px;
+  color: #969799;
+  margin-top: 8px;
+}
+
+.timer-actions {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  padding: 16px 0;
+}
+
+.timer-btn {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  border: none;
+  cursor: pointer;
+  transition: transform 0.15s;
+}
+
+.timer-btn:active { transform: scale(0.92); }
+
+.timer-btn--start {
+  background: var(--brand);
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(16,174,255,0.3);
+}
+
+.timer-btn--stop {
+  background: #ee0a24;
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(238,10,36,0.3);
+}
+
+.timer-btn--pause {
+  background: #ff976a;
+  color: #fff;
+}
+
+/* Breast side toggle */
+.breast-toggle {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  padding: 10px 0 20px;
+}
+
+.breast-side {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  border: 3px solid #ebedf0;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  color: #969799;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.breast-side--active {
+  border-color: var(--feed-color);
+  background: #fff3e8;
+  color: var(--feed-color);
+  font-weight: 600;
+}
+
+.breast-side__icon {
+  font-size: 24px;
+  margin-bottom: 2px;
+}
+
+/* ===== Feed History ===== */
+.feed-type-tag--breast { color: var(--feed-color); background: #fff3e8; }
+.feed-type-tag--bottle { color: #1989fa; background: #e8f0ff; }
+.feed-type-tag--solid { color: #07c160; background: #e8f8ee; }
+
+/* ===== Diaper Quick Select ===== */
+.diaper-type-grid {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  padding: 20px 0;
+}
+
+.diaper-type-btn {
+  width: 90px;
+  height: 90px;
+  border-radius: 16px;
+  border: 2px solid #ebedf0;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.diaper-type-btn--active {
+  border-color: var(--diaper-color);
+  background: #e8f8ee;
+}
+
+.diaper-type-btn__icon {
+  font-size: 28px;
+}
+
+.diaper-type-btn__label {
+  font-size: 13px;
+  color: #323233;
+  font-weight: 500;
+}
+
+/* ===== Sleep page ===== */
+.sleep-status {
+  text-align: center;
+  padding: 20px 0 10px;
+}
+
+.sleep-status__dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 6px;
+  animation: pulse 1.5s infinite;
+}
+
+.sleep-status__dot--sleeping { background: var(--sleep-color); }
+.sleep-status__dot--awake { background: #c8c9cc; animation: none; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.8); }
+}
+
+/* ===== Timeline ===== */
+.timeline-item {
+  position: relative;
+  padding-left: 24px;
+}
+
+.timeline-item::before {
+  content: '';
+  position: absolute;
+  left: 7px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #ebedf0;
+}
+
+.timeline-item__dot {
+  position: absolute;
+  left: 0;
+  top: 14px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid;
+}
+
+.timeline-item__dot--feed { border-color: var(--feed-color); background: #fff3e8; }
+.timeline-item__dot--diaper { border-color: var(--diaper-color); background: #e8f8ee; }
+.timeline-item__dot--sleep { border-color: var(--sleep-color); background: #f0e8ff; }
+.timeline-item__dot--growth { border-color: var(--growth-color); background: #e8f0ff; }
+.timeline-item__dot--vaccine { border-color: var(--vaccine-color); background: #ffe8ea; }
+
+/* ===== Growth chart placeholder ===== */
+.growth-chart-placeholder {
+  height: 200px;
+  background: #f7f8fa;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #c8c9cc;
+  margin: 12px 16px;
+}
+
+/* ===== Vaccine Schedule ===== */
+.vaccine-age-header {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--brand);
+  padding: 12px 16px 4px;
+  background: var(--brand-light);
+}
+
+.vaccine-item--done .van-cell__title {
+  text-decoration: line-through;
+  color: #c8c9cc;
+}
+
+/* ===== Stats page ===== */
+.stat-number {
+  font-size: 28px;
+  font-weight: 700;
+  color: #323233;
+}
+
+.stat-unit {
+  font-size: 13px;
+  color: #969799;
+  margin-left: 2px;
+}
+
+/* ===== More page grid ===== */
+.more-grid .van-grid-item__content {
+  padding: 20px 8px;
+}
+
+.more-grid-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  margin-bottom: 8px;
+}
+
+/* ===== Utilities ===== */
+.page-container {
+  min-height: 100vh;
+  background: var(--app-bg);
+}
+
+.mb-8 { margin-bottom: 8px; }
+.mb-16 { margin-bottom: 16px; }
+.mt-16 { margin-top: 16px; }
+.px-16 { padding-left: 16px; padding-right: 16px; }
+.text-center { text-align: center; }
+
+/* Fix van-nav-bar in pages */
+.van-nav-bar {
+  position: sticky !important;
+  top: 0;
+  z-index: 100;
+}
+
+/* History list inside pages */
+.history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 16px 8px;
+}
+
+.history-header__title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #323233;
+}
+
+.history-header__action {
+  font-size: 13px;
+  color: var(--brand);
+}
+
+/* Empty state */
+.empty-wrapper {
+  padding: 40px 0;
+}
+
+/* Popup form */
+.popup-form {
+  padding: 16px;
+}
+
+.popup-form .van-cell-group--inset {
+  margin: 0;
+}

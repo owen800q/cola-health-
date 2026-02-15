@@ -1,10 +1,17 @@
-const CACHE_NAME = 'cola-health-v1';
+const CACHE_NAME = 'cola-health-v2';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
   '/manifest.json',
-  '/icons/icon-192.png',
-  '/icons/icon-512.png',
+  '/icons/icon-192.svg',
+  '/icons/icon-512.svg',
+  '/css/app.css',
+  '/js/api.js',
+  '/js/app.js',
+  'https://fastly.jsdelivr.net/npm/vant@4/lib/index.css',
+  'https://fastly.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js',
+  'https://fastly.jsdelivr.net/npm/vue-router@4/dist/vue-router.global.prod.js',
+  'https://fastly.jsdelivr.net/npm/vant@4/lib/vant.min.js',
 ];
 
 // Install event — cache static assets
@@ -102,8 +109,8 @@ self.addEventListener('push', (event) => {
 
   const options = {
     body: data.body,
-    icon: '/icons/icon-192.png',
-    badge: '/icons/icon-192.png',
+    icon: '/icons/icon-192.svg',
+    badge: '/icons/icon-192.svg',
     vibrate: [200, 100, 200],
     data: data.data || { url: '/' },
     actions: [],
