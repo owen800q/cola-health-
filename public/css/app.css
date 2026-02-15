@@ -53,6 +53,12 @@ body { font-family: system-ui, -apple-system, 'PingFang SC', 'Helvetica Neue', s
 .cl { display: flex; align-items: center; padding: 13px 16px; background: var(--card); border-bottom: 1px solid var(--t5); text-decoration: none; color: inherit; cursor: pointer; }
 .cl:last-child { border-bottom: none; }
 .cl:active { background: #ececec; }
+/* Swipe to delete */
+.sw-row { position: relative; overflow: hidden; }
+.sw-row:last-child .cl { border-bottom: none; }
+.sw-c { position: relative; z-index: 1; background: var(--card); transition: transform 0.25s ease; }
+.sw-c.swiping { transition: none; }
+.sw-del { position: absolute; right: 0; top: 0; bottom: 0; width: 80px; display: flex; align-items: center; justify-content: center; background: var(--red); color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; }
 .cl .ci { width: 22px; margin-right: 12px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: var(--t2); }
 .cl .ci svg { width: 20px; height: 20px; }
 .cl .ri { width: 36px; height: 36px; border-radius: 50%; margin-right: 12px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }

@@ -529,6 +529,26 @@ const app = createApp({
       return parts.join('、') || '';
     }
 
+    // ===== SWIPE TO DELETE =====
+    let swX0 = 0;
+    function swStart(e) {
+      swX0 = e.touches[0].clientX;
+      const el = e.currentTarget;
+      el.classList.add('swiping');
+      document.querySelectorAll('.sw-c.open').forEach(o => { if (o !== el) { o.style.transform = ''; o.classList.remove('open'); } });
+    }
+    function swMove(e) {
+      const dx = e.touches[0].clientX - swX0;
+      if (dx < 0) e.currentTarget.style.transform = 'translateX(' + Math.max(dx, -80) + 'px)';
+    }
+    function swEnd(e) {
+      const el = e.currentTarget;
+      el.classList.remove('swiping');
+      const dx = e.changedTouches[0].clientX - swX0;
+      if (dx < -40) { el.style.transform = 'translateX(-80px)'; el.classList.add('open'); }
+      else { el.style.transform = ''; el.classList.remove('open'); }
+    }
+
     // ===== LIFECYCLE =====
     onMounted(async () => {
       await loadBaby();
@@ -576,6 +596,8 @@ const app = createApp({
       profileForm, saveProfile, loadProfile,
       // Dialog
       dlgVisible, dlgTitle, dlgMsg, dlgConfirm, dlgCancel,
+      // Swipe
+      swStart, swMove, swEnd,
       // Helpers
       fmtTime, fmtDate, fmtDuration, fmtDurCN, showToast, initTimes,
     };
@@ -642,16 +664,18 @@ const app = createApp({
       <div class="sbi"><span class="sbv" style="color:var(--orange)">{{ feedSummary.avg }}</span><span class="sbl">平均(ml)</span></div>
     </div>
     <div class="cs" v-if="feedHistory.length">
-      <div class="cl" v-for="item in feedHistory" :key="item.id">
-        <div class="ri milk"><svg><use href="#i-milk"/></svg></div>
-        <div class="cb">
-          <div class="ct">{{ feedItemType(item) }}</div>
-          <div class="cd">{{ fmtTime(item.time) }}<template v-if="item.note"> · {{ item.note }}</template></div>
+      <div class="sw-row" v-for="item in feedHistory" :key="item.id">
+        <div class="sw-c" @touchstart="swStart" @touchmove.prevent="swMove" @touchend="swEnd">
+          <div class="cl">
+            <div class="ri milk"><svg><use href="#i-milk"/></svg></div>
+            <div class="cb">
+              <div class="ct">{{ feedItemType(item) }}</div>
+              <div class="cd">{{ fmtTime(item.time) }}<template v-if="item.note"> · {{ item.note }}</template></div>
+            </div>
+            <div class="cr"><div class="cv" v-if="item.amount_ml">{{ item.amount_ml }}ml</div></div>
+          </div>
         </div>
-        <div class="cr">
-          <div class="cv" v-if="item.amount_ml">{{ item.amount_ml }}ml</div>
-          <div class="cm" style="color:var(--red);cursor:pointer" @click="deleteFeed(item.id)"><svg style="width:14px;height:14px"><use href="#i-trash"/></svg></div>
-        </div>
+        <div class="sw-del" @click="deleteFeed(item.id)">刪除</div>
       </div>
     </div>
     <div class="empty-state" v-else><svg><use href="#i-bottle"/></svg><p>暫無飲奶記錄</p></div>
@@ -667,16 +691,18 @@ const app = createApp({
       <div class="sbi"><span class="sbv" style="color:var(--blue)">{{ diaperSummary.total }}</span><span class="sbl">總換片</span></div>
     </div>
     <div class="cs" v-if="diaperHistory.length">
-      <div class="cl" v-for="item in diaperHistory" :key="item.id">
-        <div class="ri" :class="diaperItemCls(item)"><svg><use :href="'#' + diaperItemIcon(item)"/></svg></div>
-        <div class="cb">
-          <div class="ct">{{ diaperItemLabel(item) }}</div>
-          <div class="cd" v-if="diaperItemDetail(item)">{{ diaperItemDetail(item) }}</div>
+      <div class="sw-row" v-for="item in diaperHistory" :key="item.id">
+        <div class="sw-c" @touchstart="swStart" @touchmove.prevent="swMove" @touchend="swEnd">
+          <div class="cl">
+            <div class="ri" :class="diaperItemCls(item)"><svg><use :href="'#' + diaperItemIcon(item)"/></svg></div>
+            <div class="cb">
+              <div class="ct">{{ diaperItemLabel(item) }}</div>
+              <div class="cd" v-if="diaperItemDetail(item)">{{ diaperItemDetail(item) }}</div>
+            </div>
+            <div class="cr"><div class="cm">{{ fmtTime(item.time) }}</div></div>
+          </div>
         </div>
-        <div class="cr">
-          <div class="cm">{{ fmtTime(item.time) }}</div>
-          <div class="cm" style="color:var(--red);cursor:pointer;margin-top:4px" @click="deleteDiaper(item.id)"><svg style="width:14px;height:14px"><use href="#i-trash"/></svg></div>
-        </div>
+        <div class="sw-del" @click="deleteDiaper(item.id)">刪除</div>
       </div>
     </div>
     <div class="empty-state" v-else><svg><use href="#i-diaper"/></svg><p>暫無換片記錄</p></div>
@@ -704,16 +730,18 @@ const app = createApp({
     </div>
     <div class="st">今日睡眠記錄</div>
     <div class="cs" v-if="sleepHistory.length">
-      <div class="cl" v-for="item in sleepHistory" :key="item.id">
-        <div class="ri slp"><svg><use :href="item.end_time ? '#i-sun' : '#i-moon'"/></svg></div>
-        <div class="cb">
-          <div class="ct">{{ item.end_time ? '醒咗' : '瞓著咗' }}</div>
-          <div class="cd" v-if="item.start_time && item.end_time">瞓咗 {{ fmtDurCN(Math.floor((new Date(item.end_time) - new Date(item.start_time)) / 1000)) }}</div>
+      <div class="sw-row" v-for="item in sleepHistory" :key="item.id">
+        <div class="sw-c" @touchstart="swStart" @touchmove.prevent="swMove" @touchend="swEnd">
+          <div class="cl">
+            <div class="ri slp"><svg><use :href="item.end_time ? '#i-sun' : '#i-moon'"/></svg></div>
+            <div class="cb">
+              <div class="ct">{{ item.end_time ? '醒咗' : '瞓著咗' }}</div>
+              <div class="cd" v-if="item.start_time && item.end_time">瞓咗 {{ fmtDurCN(Math.floor((new Date(item.end_time) - new Date(item.start_time)) / 1000)) }}</div>
+            </div>
+            <div class="cr"><div class="cm">{{ fmtTime(item.end_time || item.start_time) }}</div></div>
+          </div>
         </div>
-        <div class="cr">
-          <div class="cm">{{ fmtTime(item.end_time || item.start_time) }}</div>
-          <div class="cm" style="color:var(--red);cursor:pointer;margin-top:4px" @click="deleteSleep(item.id)"><svg style="width:14px;height:14px"><use href="#i-trash"/></svg></div>
-        </div>
+        <div class="sw-del" @click="deleteSleep(item.id)">刪除</div>
       </div>
     </div>
     <div class="empty-state" v-else><svg><use href="#i-moon"/></svg><p>暫無睡眠記錄</p></div>
@@ -770,7 +798,6 @@ const app = createApp({
       <div class="fi"><span class="fl">奶量(ml)</span><div class="sp"><button @click="adjFeedAmount(-10)">−</button><div class="sv">{{ feedAmount }}</div><button @click="adjFeedAmount(10)">+</button></div></div>
     </div>
     <div class="fc" style="margin-top:16px"><div class="fi"><span class="fl">備註</span><input class="fv" type="text" placeholder="例如：有少量嘔奶" v-model="feedNotes"></div></div>
-    <div class="nt nw"><span class="nn" style="color:var(--red)"><svg><use href="#i-warn"/></svg></span><div class="nb2"><strong>蠶豆病提醒</strong>請確認配方奶粉成份不含蠶豆（fava bean）相關成份。轉奶粉前請先諮詢兒科醫生。</div></div>
     <div class="ba"><a href="javascript:;" class="bp" @click="saveFeed">儲存記錄</a></div>
   </div>
 
