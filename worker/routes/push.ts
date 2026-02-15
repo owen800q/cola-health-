@@ -81,6 +81,27 @@ pushRoutes.post('/test', async (c) => {
   return c.json({ ok: true, sent, failed });
 });
 
+// POST /api/push/check-reminders — manually trigger the cron reminder check
+pushRoutes.post('/check-reminders', async (c) => {
+  try {
+    const { handleScheduled } = await import('../scheduled');
+    await handleScheduled(c.env);
+    return c.json({ ok: true, message: 'Reminder check completed' });
+  } catch (e: any) {
+    return c.json({ ok: false, error: e.message }, 500);
+  }
+});
+
+// GET /api/push/status — debug endpoint showing subscription and reminder state
+pushRoutes.get('/status', async (c) => {
+  const db = c.env.DB;
+  const { results: subs } = await db.prepare('SELECT endpoint, created_at FROM push_subscriptions').all();
+  const { results: reminderList } = await db.prepare('SELECT * FROM reminders').all();
+  const { results: logs } = await db.prepare('SELECT * FROM notification_log').all();
+  const lastFeed = await db.prepare('SELECT time FROM feeds ORDER BY time DESC LIMIT 1').first();
+  return c.json({ subscriptions: subs?.length || 0, reminders: reminderList, notification_log: logs, last_feed: lastFeed });
+});
+
 // GET /api/push/vapid-key
 pushRoutes.get('/vapid-key', async (c) => {
   return c.json({ publicKey: c.env.VAPID_PUBLIC_KEY || '' });

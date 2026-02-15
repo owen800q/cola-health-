@@ -561,6 +561,40 @@ const app = createApp({
       else { el.style.transform = ''; el.classList.remove('open'); }
     }
 
+    // ===== REMINDERS =====
+    const reminders = reactive({ feed: { enabled: true, interval_minutes: 180, id: 1 }, diaper: { enabled: false, interval_minutes: 180, id: 2 }, vaccine: { enabled: true, advance_days: 7, id: 3 }, awake_time: { enabled: false, max_awake_minutes: 60, id: 4 } });
+
+    async function loadReminders() {
+      try {
+        const resp = await fetch('/api/reminders');
+        const data = await resp.json();
+        for (const r of data) {
+          if (reminders[r.type]) {
+            reminders[r.type].enabled = !!r.enabled;
+            reminders[r.type].id = r.id;
+            if (r.interval_minutes) reminders[r.type].interval_minutes = r.interval_minutes;
+            if (r.advance_days) reminders[r.type].advance_days = r.advance_days;
+            if (r.max_awake_minutes) reminders[r.type].max_awake_minutes = r.max_awake_minutes;
+          }
+        }
+      } catch (e) { console.warn('Load reminders:', e); }
+    }
+
+    async function toggleReminder(type) {
+      const r = reminders[type];
+      try {
+        await fetch('/api/reminders/' + r.id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: r.enabled ? 1 : 0 }) });
+      } catch (e) { console.warn('Toggle reminder:', e); }
+    }
+
+    async function updateReminderInterval(type, minutes) {
+      const r = reminders[type];
+      r.interval_minutes = minutes;
+      try {
+        await fetch('/api/reminders/' + r.id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ interval_minutes: minutes }) });
+      } catch (e) { console.warn('Update interval:', e); }
+    }
+
     // ===== PUSH NOTIFICATIONS =====
     const pushEnabled = ref(false);
 
@@ -624,6 +658,20 @@ const app = createApp({
       } catch { showToast('發送失敗'); }
     }
 
+    async function checkReminders() {
+      if (!pushEnabled.value) {
+        await enablePush();
+        if (!pushEnabled.value) return;
+      }
+      try {
+        showToast('正在檢查提醒...');
+        const resp = await fetch('/api/push/check-reminders', { method: 'POST' });
+        const data = await resp.json();
+        if (data.ok) showToast('提醒檢查完成');
+        else showToast(data.error || '檢查失敗');
+      } catch { showToast('檢查失敗'); }
+    }
+
     // ===== LIFECYCLE =====
     onMounted(async () => {
       await loadBaby();
@@ -640,6 +688,7 @@ const app = createApp({
       loadSleepHistory();
       restoreSleepTimer();
       setupPush();
+      loadReminders();
     });
 
     onUnmounted(() => {
@@ -681,8 +730,10 @@ const app = createApp({
       swStart, swMove, swEnd,
       // Helpers
       fmtTime, fmtDate, fmtDuration, fmtDurCN, showToast, initTimes,
+      // Reminders
+      reminders, toggleReminder, updateReminderInterval,
       // Push
-      pushEnabled, enablePush, testPush,
+      pushEnabled, enablePush, testPush, checkReminders,
     };
   },
   template: `
@@ -1026,33 +1077,36 @@ const app = createApp({
       <span class="nn" style="color:var(--blue)"><svg><use href="#i-bell"/></svg></span>
       <div class="nb2"><strong>點擊開啟推送通知</strong> 開啟推送通知以接收餵奶、換片及疫苗提醒。需要授權瀏覽器通知權限。</div>
     </div>
-    <div style="padding:0 16px 8px"><button class="btn-sub" @click="testPush" style="width:100%;padding:10px;border:1px solid var(--t4);border-radius:8px;background:var(--card);font-size:15px;color:var(--t1);cursor:pointer">發送測試通知</button></div>
+    <div style="padding:0 16px 8px;display:flex;gap:8px">
+      <button class="btn-sub" @click="testPush" style="flex:1;padding:10px;border:1px solid var(--t4);border-radius:8px;background:var(--card);font-size:15px;color:var(--t1);cursor:pointer">發送測試通知</button>
+      <button class="btn-sub" @click="checkReminders" style="flex:1;padding:10px;border:1px solid var(--t4);border-radius:8px;background:var(--card);font-size:15px;color:var(--t1);cursor:pointer">立即檢查提醒</button>
+    </div>
     <div class="st">餵奶提醒</div>
     <div class="rm-card">
       <div class="rm-ico" style="background:#E8F4FD;color:var(--blue)"><svg><use href="#i-milk"/></svg></div>
-      <div class="rm-body"><div class="rm-title">餵奶間隔提醒</div><div class="rm-desc">距上次餵奶 3 小時後提醒</div></div>
-      <label class="tog"><input type="checkbox" checked><span class="tsl"></span></label>
+      <div class="rm-body"><div class="rm-title">餵奶間隔提醒</div><div class="rm-desc">距上次餵奶 {{ reminders.feed.interval_minutes / 60 }} 小時後提醒</div></div>
+      <label class="tog"><input type="checkbox" v-model="reminders.feed.enabled" @change="toggleReminder('feed')"><span class="tsl"></span></label>
     </div>
-    <div class="fc">
-      <div class="fi"><span class="fl">間隔時間</span><select class="fs"><option>2 小時</option><option>2.5 小時</option><option selected>3 小時</option><option>3.5 小時</option><option>4 小時</option></select></div>
+    <div class="fc" v-if="reminders.feed.enabled">
+      <div class="fi"><span class="fl">間隔時間</span><select class="fs" :value="reminders.feed.interval_minutes" @change="updateReminderInterval('feed', +$event.target.value)"><option :value="120">2 小時</option><option :value="150">2.5 小時</option><option :value="180">3 小時</option><option :value="210">3.5 小時</option><option :value="240">4 小時</option></select></div>
     </div>
     <div class="st">換片提醒</div>
     <div class="rm-card">
       <div class="rm-ico" style="background:#FFF3E0;color:#E67E22"><svg><use href="#i-diaper"/></svg></div>
       <div class="rm-body"><div class="rm-title">換片提醒</div><div class="rm-desc">定時提醒檢查尿片</div></div>
-      <label class="tog"><input type="checkbox"><span class="tsl"></span></label>
+      <label class="tog"><input type="checkbox" v-model="reminders.diaper.enabled" @change="toggleReminder('diaper')"><span class="tsl"></span></label>
     </div>
     <div class="st">疫苗提醒</div>
     <div class="rm-card">
       <div class="rm-ico" style="background:#E8F5E9;color:var(--green)"><svg><use href="#i-shield"/></svg></div>
       <div class="rm-body"><div class="rm-title">疫苗到期提醒</div><div class="rm-desc">接種日前 7 天推送提醒</div></div>
-      <label class="tog"><input type="checkbox" checked><span class="tsl"></span></label>
+      <label class="tog"><input type="checkbox" v-model="reminders.vaccine.enabled" @change="toggleReminder('vaccine')"><span class="tsl"></span></label>
     </div>
     <div class="st">睡眠提醒</div>
     <div class="rm-card">
       <div class="rm-ico" style="background:#F3E8FF;color:var(--purple)"><svg><use href="#i-moon"/></svg></div>
       <div class="rm-body"><div class="rm-title">清醒時間提醒</div><div class="rm-desc">清醒超過建議時間提醒哄睡</div></div>
-      <label class="tog"><input type="checkbox"><span class="tsl"></span></label>
+      <label class="tog"><input type="checkbox" v-model="reminders.awake_time.enabled" @change="toggleReminder('awake_time')"><span class="tsl"></span></label>
     </div>
   </div>
 
