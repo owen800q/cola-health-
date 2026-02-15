@@ -1,36 +1,32 @@
 /* ============================================================
- * Baby Tracker – Vue 3 + Vant 4 SPA
+ * Baby Tracker – Vue 3 SPA (Prototype-matched UI)
  * ============================================================ */
-const { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick, toRaw } = Vue;
-const { useRouter, useRoute } = VueRouter;
-const { showToast, showSuccessToast, showLoadingToast, showConfirmDialog, showDialog, closeToast } = vant;
+const { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick, createApp } = Vue;
 
 /* ---------- helpers ---------- */
 function pad(n) { return String(n).padStart(2, '0'); }
-
 function fmtDuration(seconds) {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
   const s = seconds % 60;
   return (h ? pad(h) + ':' : '') + pad(m) + ':' + pad(s);
 }
-
 function fmtTime(iso) {
   if (!iso) return '--';
   const d = new Date(iso);
   return pad(d.getHours()) + ':' + pad(d.getMinutes());
 }
-
 function fmtDate(iso) {
   if (!iso) return '--';
   const d = new Date(iso);
   return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
 }
-
-function fmtDateTime(iso) {
-  return fmtDate(iso) + ' ' + fmtTime(iso);
+function fmtDateCN(iso) {
+  if (!iso) return '--';
+  const d = new Date(iso);
+  const days = ['日','一','二','三','四','五','六'];
+  return (d.getMonth()+1) + '月' + d.getDate() + '日（' + days[d.getDay()] + '）';
 }
-
 function calcAge(birthday) {
   if (!birthday) return '';
   const birth = new Date(birthday);
@@ -44,18 +40,33 @@ function calcAge(birthday) {
     return y + '歲' + (m ? m + '個月' : '');
   }
   if (months > 0) return months + '個月' + (days > 0 ? days + '日' : '');
-  return Math.max(days, 0) + '日';
+  return Math.max(days, 0) + '天';
 }
-
+function calcDaysSinceBirth(birthday) {
+  if (!birthday) return 0;
+  const birth = new Date(birthday);
+  const now = new Date();
+  return Math.floor((now - birth) / (86400000));
+}
 function nowISO() { return new Date().toISOString(); }
-
 function todayStart() {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
+  const d = new Date(); d.setHours(0, 0, 0, 0);
   return d.toISOString();
 }
+function fmtBirthday(birthday) {
+  if (!birthday) return '';
+  const d = new Date(birthday);
+  return d.getFullYear() + '年' + (d.getMonth()+1) + '月' + d.getDate() + '日';
+}
+function fmtDurCN(seconds) {
+  if (!seconds || seconds < 60) return '';
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (h > 0) return h + '小時' + (m > 0 ? m + '分鐘' : '');
+  return m + '分鐘';
+}
 
-/* ---------- Simple reactive store ---------- */
+/* ---------- Simple store ---------- */
 const store = reactive({
   baby: null,
   babyId: localStorage.getItem('currentBabyId') || null,
@@ -74,1189 +85,108 @@ async function loadBaby() {
   }
 }
 
+/* ---------- Toast ---------- */
+function showToast(msg) {
+  const d = document.createElement('div');
+  d.innerHTML = '<div class="toast"><svg viewBox="0 0 24 24" style="width:40px;height:40px;display:block;margin:0 auto 8px;"><circle cx="12" cy="12" r="10" fill="none" stroke="#fff" stroke-width="1.8"/><polyline points="9,12 11.5,14.5 16,9.5" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="tm">' + msg + '</span></div>';
+  document.body.appendChild(d);
+  setTimeout(function () { if (d.parentNode) document.body.removeChild(d); }, 1500);
+}
+
 /* ============================================================
- * COMPONENTS
+ * VUE APP
  * ============================================================ */
-
-/* ---------- HOME PAGE ---------- */
-const HomePage = {
-  name: 'HomePage',
-  template: `
-    <div class="page-container">
-      <!-- Header -->
-      <div class="dashboard-header">
-        <div class="baby-info">
-          <div class="baby-avatar">{{ babyEmoji }}</div>
-          <div>
-            <div class="baby-name">{{ baby?.name || '可樂仔' }}</div>
-            <div class="baby-age">{{ age }} · {{ todayStr }}</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Summary Cards -->
-      <div class="summary-grid">
-        <div class="summary-card" @click="$router.push('/feed')">
-          <div class="summary-card__icon summary-card__icon--feed">
-            <van-icon name="coupon-o" />
-          </div>
-          <div class="summary-card__value">{{ stats.feedCount || 0 }}<span class="stat-unit">次</span></div>
-          <div class="summary-card__label">今日飲奶</div>
-          <div class="summary-card__sub">{{ stats.feedTotal ? stats.feedTotal + 'ml' : '未記錄' }}</div>
-        </div>
-        <div class="summary-card" @click="$router.push('/diaper')">
-          <div class="summary-card__icon summary-card__icon--diaper">
-            <van-icon name="smile-o" />
-          </div>
-          <div class="summary-card__value">{{ stats.diaperCount || 0 }}<span class="stat-unit">次</span></div>
-          <div class="summary-card__label">今日換片</div>
-          <div class="summary-card__sub">{{ stats.diaperSummary || '未記錄' }}</div>
-        </div>
-        <div class="summary-card" @click="$router.push('/sleep')">
-          <div class="summary-card__icon summary-card__icon--sleep">
-            <van-icon name="clock-o" />
-          </div>
-          <div class="summary-card__value">{{ stats.sleepHours || 0 }}<span class="stat-unit">小時</span></div>
-          <div class="summary-card__label">今日睡眠</div>
-          <div class="summary-card__sub">{{ stats.sleepCount ? stats.sleepCount + '次' : '未記錄' }}</div>
-        </div>
-        <div class="summary-card" @click="$router.push('/more/growth')">
-          <div class="summary-card__icon summary-card__icon--growth">
-            <van-icon name="chart-trending-o" />
-          </div>
-          <div class="summary-card__value">{{ stats.lastWeight || '--' }}<span class="stat-unit">kg</span></div>
-          <div class="summary-card__label">最新體重</div>
-          <div class="summary-card__sub">{{ stats.lastGrowthDate || '未記錄' }}</div>
-        </div>
-      </div>
-
-      <!-- Quick Actions -->
-      <div class="section-title">快速記錄</div>
-      <div class="quick-actions">
-        <van-grid :column-num="4" :border="false" :gutter="10">
-          <van-grid-item @click="$router.push('/feed?tab=breast')">
-            <div class="quick-action-icon quick-action-icon--breast">🤱</div>
-            <span>母乳</span>
-          </van-grid-item>
-          <van-grid-item @click="$router.push('/feed?tab=bottle')">
-            <div class="quick-action-icon quick-action-icon--bottle">🍼</div>
-            <span>奶瓶</span>
-          </van-grid-item>
-          <van-grid-item @click="$router.push('/diaper')">
-            <div class="quick-action-icon quick-action-icon--diaper">👶</div>
-            <span>換片</span>
-          </van-grid-item>
-          <van-grid-item @click="$router.push('/sleep')">
-            <div class="quick-action-icon quick-action-icon--sleep">😴</div>
-            <span>睡眠</span>
-          </van-grid-item>
-        </van-grid>
-      </div>
-
-      <!-- Recent Activities -->
-      <div class="section-title">
-        最近活動
-        <span class="section-title__more" @click="$router.push('/more/timeline')">查看全部 ></span>
-      </div>
-      <van-cell-group inset>
-        <van-cell v-for="item in recentItems" :key="item.id + item.type"
-          :title="item.title" :value="fmtTime(item.time)" :label="item.detail" />
-        <van-empty v-if="!recentItems.length" description="今日暫無記錄" image="search" />
-      </van-cell-group>
-    </div>
-  `,
+const app = createApp({
   setup() {
-    const stats = reactive({
-      feedCount: 0, feedTotal: 0,
-      diaperCount: 0, diaperSummary: '',
-      sleepHours: 0, sleepCount: 0,
-      lastWeight: null, lastGrowthDate: null,
+    // Navigation state
+    const currentPage = ref(0);
+    const activeSub = ref(null);
+
+    // Data state
+    const baby = computed(() => store.baby);
+    const babyName = computed(() => baby.value?.name || '可樂仔');
+    const babyAge = computed(() => calcAge(baby.value?.birthday));
+    const babyBirthday = computed(() => fmtBirthday(baby.value?.birthday));
+    const daysSinceBirth = computed(() => calcDaysSinceBirth(baby.value?.birthday));
+
+    // Home page stats
+    const homeStats = reactive({
+      feedTotal: 0, feedCount: 0,
+      diaperWet: 0, diaperDirty: 0, diaperTotal: 0,
+      sleepHours: 0, sleepCount: 0, sleepLongest: 0,
     });
     const recentItems = ref([]);
-    const baby = computed(() => store.baby);
-    const babyEmoji = computed(() => store.baby?.gender === 'F' ? '👧' : '👦');
-    const age = computed(() => calcAge(store.baby?.birthday));
-    const todayStr = computed(() => {
-      const d = new Date();
-      return (d.getMonth() + 1) + '月' + d.getDate() + '日';
+
+    // Feed page
+    const feedHistory = ref([]);
+    const feedAmount = ref(60);
+    const feedType = ref('formula');
+    const feedTime = ref('');
+    const feedNotes = ref('');
+
+    // Diaper page
+    const diaperHistory = ref([]);
+    const diaperType = ref('pee');
+    const diaperTime = ref('');
+    const diaperColor = ref('黃色（正常）');
+    const diaperConsistency = ref('稀軟');
+    const diaperAmount = ref('少量');
+    const diaperNotes = ref('');
+
+    // Sleep page
+    const sleepHistory = ref([]);
+    const isSleeping = ref(false);
+    const sleepSeconds = ref(0);
+    const sleepStartISO = ref(null);
+    let sleepTimer = null;
+    const manualSleepStart = ref('');
+    const manualSleepEnd = ref('');
+    const sleepQuality = ref('好 · 瞓得穩');
+    const sleepNotes = ref('');
+
+    // Settings / Profile
+    const profileForm = reactive({
+      name: '', gender: '男', birthday: '',
+      birth_weight: '', birth_height: '', blood_type: '',
     });
 
-    async function loadData() {
+    // Confirm dialog
+    const dlgVisible = ref(false);
+    const dlgTitle = ref('');
+    const dlgMsg = ref('');
+    let dlgResolve = null;
+
+    function confirmDialog(title, msg) {
+      dlgTitle.value = title;
+      dlgMsg.value = msg;
+      dlgVisible.value = true;
+      return new Promise((resolve) => { dlgResolve = resolve; });
+    }
+    function dlgConfirm() { dlgVisible.value = false; if (dlgResolve) dlgResolve(true); dlgResolve = null; }
+    function dlgCancel() { dlgVisible.value = false; if (dlgResolve) dlgResolve(false); dlgResolve = null; }
+
+    // Navigation
+    function go(i) { currentPage.value = i; }
+    function openSub(name) { activeSub.value = name; }
+    function closeSub() { activeSub.value = null; }
+
+    // ===== DATA LOADING =====
+    async function loadHomeData() {
       if (!store.babyId) return;
       try {
-        const [feeds, diapers, sleeps, growth, timeline] = await Promise.all([
+        const [feeds, diapers, sleeps, timeline] = await Promise.all([
           API.getFeeds(store.babyId, { date: todayStart() }),
           API.getDiapers(store.babyId, { date: todayStart() }),
           API.getSleeps(store.babyId, { date: todayStart() }),
-          API.getGrowth(store.babyId),
-          API.getTimeline(store.babyId, { limit: 5 }),
+          API.getTimeline(store.babyId, { limit: 10 }),
         ]);
-        stats.feedCount = feeds?.length || 0;
-        stats.feedTotal = feeds?.reduce((s, f) => s + (f.amount_ml || 0), 0) || 0;
-        stats.diaperCount = diapers?.length || 0;
-        const wet = diapers?.filter(d => d.type === 'wet' || d.type === 'both').length || 0;
-        const dirty = diapers?.filter(d => d.type === 'dirty' || d.type === 'both').length || 0;
-        stats.diaperSummary = wet + '濕 · ' + dirty + '髒';
-        stats.sleepCount = sleeps?.length || 0;
-        const totalMin = sleeps?.reduce((s, sl) => {
-          if (sl.start_time && sl.end_time) {
-            return s + (new Date(sl.end_time) - new Date(sl.start_time)) / 60000;
-          }
-          return s;
-        }, 0) || 0;
-        stats.sleepHours = (totalMin / 60).toFixed(1);
-        if (growth && growth.length > 0) {
-          stats.lastWeight = growth[0].weight_kg;
-          stats.lastGrowthDate = fmtDate(growth[0].recorded_at);
-        }
-        // Build recent items
-        recentItems.value = (timeline || []).map(e => ({
-          id: e.id,
-          type: e.type,
-          time: e.time,
-          title: eventTitle(e),
-          detail: eventDetail(e),
-        }));
-      } catch (e) {
-        console.warn('Dashboard load error:', e);
-      }
-    }
-
-    function eventTitle(e) {
-      const map = { feed: '🍼 飲奶', diaper: '👶 換片', sleep: '😴 睡眠', growth: '📏 成長', vaccine: '💉 疫苗' };
-      return map[e.type] || e.type;
-    }
-
-    function eventDetail(e) {
-      if (e.type === 'feed') return (e.feed_type || '') + ' ' + (e.amount_ml ? e.amount_ml + 'ml' : '');
-      if (e.type === 'diaper') return e.diaper_type || '';
-      if (e.type === 'sleep') return e.duration ? fmtDuration(e.duration) : '';
-      return '';
-    }
-
-    onMounted(async () => {
-      await loadBaby();
-      loadData();
-    });
-
-    return { stats, recentItems, baby, babyEmoji, age, todayStr, fmtTime };
-  },
-};
-
-/* ---------- FEED PAGE ---------- */
-const FeedPage = {
-  name: 'FeedPage',
-  template: `
-    <div class="page-container">
-      <van-nav-bar title="飲奶記錄" />
-      <van-tabs v-model:active="activeTab" animated swipeable>
-        <!-- 母乳 Tab -->
-        <van-tab title="母乳" name="breast">
-          <div class="breast-toggle">
-            <div class="breast-side" :class="{'breast-side--active': side === 'left'}" @click="side = 'left'">
-              <div class="breast-side__icon">🤱</div>
-              左邊
-            </div>
-            <div class="breast-side" :class="{'breast-side--active': side === 'right'}" @click="side = 'right'">
-              <div class="breast-side__icon">🤱</div>
-              右邊
-            </div>
-          </div>
-          <div class="timer-display">
-            <div class="timer-time">{{ fmtDuration(breastSeconds) }}</div>
-            <div class="timer-label">{{ breastRunning ? (side === 'left' ? '左邊餵奶中...' : '右邊餵奶中...') : '按下開始計時' }}</div>
-          </div>
-          <div class="timer-actions">
-            <button v-if="!breastRunning" class="timer-btn timer-btn--start" @click="startBreast">
-              <van-icon name="play" />
-            </button>
-            <button v-else class="timer-btn timer-btn--stop" @click="stopBreast">
-              <van-icon name="stop" />
-            </button>
-          </div>
-        </van-tab>
-
-        <!-- 奶瓶 Tab -->
-        <van-tab title="奶瓶" name="bottle">
-          <div class="popup-form">
-            <van-cell-group inset>
-              <van-field v-model="bottleAmount" type="digit" label="奶量 (ml)" placeholder="輸入奶量"
-                :rules="[{required: true, message: '請輸入奶量'}]">
-                <template #button>
-                  <van-stepper v-model="bottleAmount" min="0" max="500" step="10" theme="round" />
-                </template>
-              </van-field>
-              <van-field v-model="bottleType" is-link readonly label="奶類型" :placeholder="bottleType || '選擇'" @click="showBottleTypePicker = true" />
-              <van-field v-model="feedNotes" label="備註" placeholder="選填" />
-            </van-cell-group>
-            <div style="padding: 16px;">
-              <van-button type="primary" block round @click="saveBottle" :loading="saving">儲存記錄</van-button>
-            </div>
-          </div>
-        </van-tab>
-
-        <!-- 固體食物 Tab -->
-        <van-tab title="固體食物" name="solid">
-          <div class="popup-form">
-            <van-cell-group inset>
-              <van-field v-model="solidFood" label="食物" placeholder="例如：米糊、蘋果蓉" />
-              <van-field v-model="solidAmount" type="digit" label="份量 (g)" placeholder="選填" />
-              <van-field v-model="feedNotes" label="備註" placeholder="選填" />
-            </van-cell-group>
-            <div style="padding: 16px;">
-              <van-button type="primary" block round @click="saveSolid" :loading="saving">儲存記錄</van-button>
-            </div>
-          </div>
-        </van-tab>
-      </van-tabs>
-
-      <!-- History -->
-      <div class="history-header">
-        <div class="history-header__title">飲奶紀錄</div>
-      </div>
-      <van-pull-refresh v-model="refreshing" @refresh="loadHistory">
-        <van-cell-group inset>
-          <van-swipe-cell v-for="item in history" :key="item.id">
-            <van-cell :title="feedTitle(item)" :value="fmtTime(item.start_time)" :label="feedLabel(item)">
-              <template #icon>
-                <van-tag :type="feedTagType(item.feed_type)" style="margin-right:8px;">{{ feedTypeLabel(item.feed_type) }}</van-tag>
-              </template>
-            </van-cell>
-            <template #right>
-              <van-button square type="danger" text="刪除" @click="deleteFeed(item.id)" style="height:100%;" />
-            </template>
-          </van-swipe-cell>
-          <van-empty v-if="!history.length" description="暫無飲奶記錄" />
-        </van-cell-group>
-      </van-pull-refresh>
-    </div>
-  `,
-  setup() {
-    const route = useRoute();
-    const activeTab = ref(route.query.tab || 'breast');
-    const side = ref('left');
-    const breastSeconds = ref(0);
-    const breastRunning = ref(false);
-    let breastTimer = null;
-    const bottleAmount = ref(120);
-    const bottleType = ref('配方奶');
-    const solidFood = ref('');
-    const solidAmount = ref('');
-    const feedNotes = ref('');
-    const showBottleTypePicker = ref(false);
-    const saving = ref(false);
-    const refreshing = ref(false);
-    const history = ref([]);
-
-    // Restore timer from localStorage
-    onMounted(() => {
-      const saved = localStorage.getItem('breastTimer');
-      if (saved) {
-        const data = JSON.parse(saved);
-        if (data.running) {
-          const elapsed = Math.floor((Date.now() - data.startedAt) / 1000);
-          breastSeconds.value = elapsed;
-          breastRunning.value = true;
-          side.value = data.side || 'left';
-          breastTimer = setInterval(() => { breastSeconds.value++; }, 1000);
-        }
-      }
-      loadHistory();
-    });
-
-    onUnmounted(() => {
-      if (breastTimer) clearInterval(breastTimer);
-    });
-
-    function startBreast() {
-      breastSeconds.value = 0;
-      breastRunning.value = true;
-      const startedAt = Date.now();
-      localStorage.setItem('breastTimer', JSON.stringify({ running: true, startedAt, side: side.value }));
-      breastTimer = setInterval(() => { breastSeconds.value++; }, 1000);
-    }
-
-    async function stopBreast() {
-      breastRunning.value = false;
-      if (breastTimer) { clearInterval(breastTimer); breastTimer = null; }
-      localStorage.removeItem('breastTimer');
-      if (breastSeconds.value < 5) return;
-      try {
-        saving.value = true;
-        const duration = breastSeconds.value;
-        const start = new Date(Date.now() - duration * 1000).toISOString();
-        await API.createFeed({
-          baby_id: store.babyId,
-          feed_type: 'breast',
-          start_time: start,
-          end_time: nowISO(),
-          duration_seconds: duration,
-          breast_side: side.value,
-          notes: feedNotes.value || null,
-        });
-        showSuccessToast('已儲存');
-        breastSeconds.value = 0;
-        loadHistory();
-      } catch (e) {
-        showToast('儲存失敗');
-      } finally {
-        saving.value = false;
-      }
-    }
-
-    async function saveBottle() {
-      if (!bottleAmount.value) return showToast('請輸入奶量');
-      try {
-        saving.value = true;
-        await API.createFeed({
-          baby_id: store.babyId,
-          feed_type: 'bottle',
-          start_time: nowISO(),
-          amount_ml: Number(bottleAmount.value),
-          formula_type: bottleType.value,
-          notes: feedNotes.value || null,
-        });
-        showSuccessToast('已儲存');
-        feedNotes.value = '';
-        loadHistory();
-      } catch (e) {
-        showToast('儲存失敗');
-      } finally {
-        saving.value = false;
-      }
-    }
-
-    async function saveSolid() {
-      if (!solidFood.value) return showToast('請輸入食物名稱');
-      try {
-        saving.value = true;
-        await API.createFeed({
-          baby_id: store.babyId,
-          feed_type: 'solid',
-          start_time: nowISO(),
-          amount_ml: solidAmount.value ? Number(solidAmount.value) : null,
-          notes: (solidFood.value + ' ' + (feedNotes.value || '')).trim(),
-        });
-        showSuccessToast('已儲存');
-        solidFood.value = '';
-        solidAmount.value = '';
-        feedNotes.value = '';
-        loadHistory();
-      } catch (e) {
-        showToast('儲存失敗');
-      } finally {
-        saving.value = false;
-      }
-    }
-
-    async function loadHistory() {
-      try {
-        history.value = await API.getFeeds(store.babyId, { limit: 20 }) || [];
-      } catch (e) {
-        console.warn('Feed history error:', e);
-      } finally {
-        refreshing.value = false;
-      }
-    }
-
-    async function deleteFeed(id) {
-      try {
-        await showConfirmDialog({ title: '確認刪除', message: '刪除後無法恢復' });
-        await API.deleteFeed(id);
-        showSuccessToast('已刪除');
-        loadHistory();
-      } catch (e) { /* cancelled */ }
-    }
-
-    function feedTitle(item) {
-      if (item.feed_type === 'breast') return (item.breast_side === 'left' ? '左邊' : '右邊') + '母乳';
-      if (item.feed_type === 'bottle') return (item.amount_ml || 0) + 'ml ' + (item.formula_type || '');
-      return item.notes || '固體食物';
-    }
-
-    function feedLabel(item) {
-      if (item.duration_seconds) return fmtDuration(item.duration_seconds);
-      return item.notes || '';
-    }
-
-    function feedTypeLabel(type) {
-      return { breast: '母乳', bottle: '奶瓶', solid: '固體' }[type] || type;
-    }
-
-    function feedTagType(type) {
-      return { breast: 'warning', bottle: 'primary', solid: 'success' }[type] || 'default';
-    }
-
-    return {
-      activeTab, side, breastSeconds, breastRunning, bottleAmount, bottleType,
-      solidFood, solidAmount, feedNotes, showBottleTypePicker, saving, refreshing,
-      history, startBreast, stopBreast, saveBottle, saveSolid, loadHistory, deleteFeed,
-      feedTitle, feedLabel, feedTypeLabel, feedTagType, fmtDuration, fmtTime,
-    };
-  },
-};
-
-/* ---------- DIAPER PAGE ---------- */
-const DiaperPage = {
-  name: 'DiaperPage',
-  template: `
-    <div class="page-container">
-      <van-nav-bar title="換片記錄" />
-
-      <!-- Quick Type Select -->
-      <div class="diaper-type-grid">
-        <div class="diaper-type-btn" :class="{'diaper-type-btn--active': diaperType === 'wet'}" @click="diaperType = 'wet'">
-          <div class="diaper-type-btn__icon">💧</div>
-          <div class="diaper-type-btn__label">尿尿</div>
-        </div>
-        <div class="diaper-type-btn" :class="{'diaper-type-btn--active': diaperType === 'dirty'}" @click="diaperType = 'dirty'">
-          <div class="diaper-type-btn__icon">💩</div>
-          <div class="diaper-type-btn__label">便便</div>
-        </div>
-        <div class="diaper-type-btn" :class="{'diaper-type-btn--active': diaperType === 'both'}" @click="diaperType = 'both'">
-          <div class="diaper-type-btn__icon">💧💩</div>
-          <div class="diaper-type-btn__label">混合</div>
-        </div>
-      </div>
-
-      <!-- Details (show when dirty) -->
-      <van-cell-group inset v-if="diaperType === 'dirty' || diaperType === 'both'" style="margin-bottom: 12px;">
-        <van-field v-model="color" is-link readonly label="顏色" placeholder="選擇" @click="showColorPicker = true" />
-        <van-field v-model="consistency" is-link readonly label="質地" placeholder="選擇" @click="showConsistencyPicker = true" />
-      </van-cell-group>
-
-      <van-cell-group inset style="margin-bottom: 12px;">
-        <van-field v-model="diaperNotes" label="備註" placeholder="選填" />
-      </van-cell-group>
-
-      <div class="px-16 mb-16">
-        <van-button type="success" block round size="large" @click="saveDiaper" :loading="saving">
-          儲存記錄
-        </van-button>
-      </div>
-
-      <!-- Color Picker Popup -->
-      <van-popup v-model:show="showColorPicker" position="bottom" round>
-        <van-picker title="顏色" :columns="colorOptions" @confirm="onColorConfirm" @cancel="showColorPicker = false" />
-      </van-popup>
-
-      <!-- Consistency Picker Popup -->
-      <van-popup v-model:show="showConsistencyPicker" position="bottom" round>
-        <van-picker title="質地" :columns="consistencyOptions" @confirm="onConsistencyConfirm" @cancel="showConsistencyPicker = false" />
-      </van-popup>
-
-      <!-- History -->
-      <div class="history-header">
-        <div class="history-header__title">換片紀錄</div>
-      </div>
-      <van-pull-refresh v-model="refreshing" @refresh="loadHistory">
-        <van-cell-group inset>
-          <van-swipe-cell v-for="item in history" :key="item.id">
-            <van-cell :title="diaperTitle(item)" :value="fmtTime(item.changed_at)" :label="item.notes || ''">
-              <template #icon>
-                <van-tag :type="item.type === 'wet' ? 'primary' : item.type === 'dirty' ? 'warning' : 'success'" style="margin-right:8px;">
-                  {{ {wet:'尿尿',dirty:'便便',both:'混合'}[item.type] }}
-                </van-tag>
-              </template>
-            </van-cell>
-            <template #right>
-              <van-button square type="danger" text="刪除" @click="deleteDiaper(item.id)" style="height:100%;" />
-            </template>
-          </van-swipe-cell>
-          <van-empty v-if="!history.length" description="暫無換片記錄" />
-        </van-cell-group>
-      </van-pull-refresh>
-    </div>
-  `,
-  setup() {
-    const diaperType = ref('wet');
-    const color = ref('');
-    const consistency = ref('');
-    const diaperNotes = ref('');
-    const showColorPicker = ref(false);
-    const showConsistencyPicker = ref(false);
-    const saving = ref(false);
-    const refreshing = ref(false);
-    const history = ref([]);
-
-    const colorOptions = [
-      { text: '黃色', value: 'yellow' },
-      { text: '綠色', value: 'green' },
-      { text: '啡色', value: 'brown' },
-      { text: '黑色', value: 'black' },
-      { text: '紅色', value: 'red' },
-      { text: '白色', value: 'white' },
-    ];
-    const consistencyOptions = [
-      { text: '稀', value: 'watery' },
-      { text: '軟', value: 'soft' },
-      { text: '正常', value: 'normal' },
-      { text: '硬', value: 'hard' },
-    ];
-
-    function onColorConfirm({ selectedOptions }) {
-      color.value = selectedOptions[0]?.text || '';
-      showColorPicker.value = false;
-    }
-    function onConsistencyConfirm({ selectedOptions }) {
-      consistency.value = selectedOptions[0]?.text || '';
-      showConsistencyPicker.value = false;
-    }
-
-    async function saveDiaper() {
-      try {
-        saving.value = true;
-        await API.createDiaper({
-          baby_id: store.babyId,
-          type: diaperType.value,
-          color: color.value || null,
-          consistency: consistency.value || null,
-          notes: diaperNotes.value || null,
-          changed_at: nowISO(),
-        });
-        showSuccessToast('已儲存');
-        diaperNotes.value = '';
-        color.value = '';
-        consistency.value = '';
-        loadHistory();
-      } catch (e) {
-        showToast('儲存失敗');
-      } finally {
-        saving.value = false;
-      }
-    }
-
-    async function loadHistory() {
-      try {
-        history.value = await API.getDiapers(store.babyId, { limit: 20 }) || [];
-      } catch (e) {
-        console.warn('Diaper history error:', e);
-      } finally {
-        refreshing.value = false;
-      }
-    }
-
-    async function deleteDiaper(id) {
-      try {
-        await showConfirmDialog({ title: '確認刪除', message: '刪除後無法恢復' });
-        await API.deleteDiaper(id);
-        showSuccessToast('已刪除');
-        loadHistory();
-      } catch (e) { /* cancelled */ }
-    }
-
-    function diaperTitle(item) {
-      let parts = [];
-      if (item.color) parts.push(item.color);
-      if (item.consistency) parts.push(item.consistency);
-      return parts.length ? parts.join(' · ') : ({ wet: '尿尿', dirty: '便便', both: '混合' }[item.type]);
-    }
-
-    onMounted(() => { loadHistory(); });
-
-    return {
-      diaperType, color, consistency, diaperNotes, showColorPicker, showConsistencyPicker,
-      saving, refreshing, history, colorOptions, consistencyOptions,
-      onColorConfirm, onConsistencyConfirm, saveDiaper, loadHistory, deleteDiaper,
-      diaperTitle, fmtTime,
-    };
-  },
-};
-
-/* ---------- SLEEP PAGE ---------- */
-const SleepPage = {
-  name: 'SleepPage',
-  template: `
-    <div class="page-container">
-      <van-nav-bar title="睡眠記錄" />
-
-      <div class="sleep-status">
-        <span class="sleep-status__dot" :class="sleeping ? 'sleep-status__dot--sleeping' : 'sleep-status__dot--awake'"></span>
-        <span>{{ sleeping ? '正在睡覺' : '已醒來' }}</span>
-      </div>
-
-      <div class="timer-display">
-        <div class="timer-time">{{ fmtDuration(sleepSeconds) }}</div>
-        <div class="timer-label">{{ sleeping ? '入睡時間: ' + fmtTime(sleepStart) : '按下開始記錄睡眠' }}</div>
-      </div>
-
-      <div class="timer-actions">
-        <button v-if="!sleeping" class="timer-btn timer-btn--start" @click="startSleep">
-          <van-icon name="play" />
-        </button>
-        <button v-else class="timer-btn timer-btn--stop" @click="stopSleep">
-          <van-icon name="stop" />
-        </button>
-      </div>
-
-      <!-- Manual Entry -->
-      <div class="px-16 mb-16">
-        <van-button plain block round type="primary" size="small" @click="showManual = true">
-          手動輸入
-        </van-button>
-      </div>
-
-      <!-- Manual Entry Popup -->
-      <van-popup v-model:show="showManual" position="bottom" round style="padding: 16px; padding-bottom: 32px;">
-        <div style="font-size:16px; font-weight:600; text-align:center; margin-bottom:16px;">手動輸入睡眠</div>
-        <van-cell-group inset>
-          <van-field v-model="manualStart" label="開始時間" placeholder="YYYY-MM-DD HH:MM" />
-          <van-field v-model="manualEnd" label="結束時間" placeholder="YYYY-MM-DD HH:MM" />
-          <van-field v-model="sleepNotes" label="備註" placeholder="選填" />
-        </van-cell-group>
-        <div style="padding: 16px 0;">
-          <van-button type="primary" block round @click="saveManualSleep" :loading="saving">儲存</van-button>
-        </div>
-      </van-popup>
-
-      <!-- History -->
-      <div class="history-header">
-        <div class="history-header__title">睡眠紀錄</div>
-      </div>
-      <van-pull-refresh v-model="refreshing" @refresh="loadHistory">
-        <van-cell-group inset>
-          <van-swipe-cell v-for="item in history" :key="item.id">
-            <van-cell :title="sleepTitle(item)" :value="fmtTime(item.start_time)" :label="item.notes || ''">
-              <template #icon>
-                <van-icon name="clock-o" color="#7232dd" style="margin-right:8px; font-size:18px;" />
-              </template>
-            </van-cell>
-            <template #right>
-              <van-button square type="danger" text="刪除" @click="deleteSleep(item.id)" style="height:100%;" />
-            </template>
-          </van-swipe-cell>
-          <van-empty v-if="!history.length" description="暫無睡眠記錄" />
-        </van-cell-group>
-      </van-pull-refresh>
-    </div>
-  `,
-  setup() {
-    const sleeping = ref(false);
-    const sleepSeconds = ref(0);
-    const sleepStart = ref(null);
-    let sleepTimer = null;
-    const showManual = ref(false);
-    const manualStart = ref('');
-    const manualEnd = ref('');
-    const sleepNotes = ref('');
-    const saving = ref(false);
-    const refreshing = ref(false);
-    const history = ref([]);
-
-    onMounted(() => {
-      // Restore timer
-      const saved = localStorage.getItem('sleepTimer');
-      if (saved) {
-        const data = JSON.parse(saved);
-        if (data.running) {
-          sleepStart.value = data.startISO;
-          sleeping.value = true;
-          sleepSeconds.value = Math.floor((Date.now() - data.startedAt) / 1000);
-          sleepTimer = setInterval(() => { sleepSeconds.value++; }, 1000);
-        }
-      }
-      loadHistory();
-    });
-
-    onUnmounted(() => {
-      if (sleepTimer) clearInterval(sleepTimer);
-    });
-
-    function startSleep() {
-      sleepStart.value = nowISO();
-      sleeping.value = true;
-      sleepSeconds.value = 0;
-      localStorage.setItem('sleepTimer', JSON.stringify({ running: true, startedAt: Date.now(), startISO: sleepStart.value }));
-      sleepTimer = setInterval(() => { sleepSeconds.value++; }, 1000);
-    }
-
-    async function stopSleep() {
-      sleeping.value = false;
-      if (sleepTimer) { clearInterval(sleepTimer); sleepTimer = null; }
-      localStorage.removeItem('sleepTimer');
-      if (sleepSeconds.value < 60) { sleepSeconds.value = 0; return; }
-      try {
-        saving.value = true;
-        await API.createSleep({
-          baby_id: store.babyId,
-          start_time: sleepStart.value,
-          end_time: nowISO(),
-          notes: sleepNotes.value || null,
-        });
-        showSuccessToast('已儲存');
-        sleepSeconds.value = 0;
-        sleepNotes.value = '';
-        loadHistory();
-      } catch (e) {
-        showToast('儲存失敗');
-      } finally {
-        saving.value = false;
-      }
-    }
-
-    async function saveManualSleep() {
-      if (!manualStart.value || !manualEnd.value) return showToast('請輸入開始和結束時間');
-      try {
-        saving.value = true;
-        await API.createSleep({
-          baby_id: store.babyId,
-          start_time: new Date(manualStart.value).toISOString(),
-          end_time: new Date(manualEnd.value).toISOString(),
-          notes: sleepNotes.value || null,
-        });
-        showSuccessToast('已儲存');
-        showManual.value = false;
-        manualStart.value = '';
-        manualEnd.value = '';
-        sleepNotes.value = '';
-        loadHistory();
-      } catch (e) {
-        showToast('儲存失敗');
-      } finally {
-        saving.value = false;
-      }
-    }
-
-    async function loadHistory() {
-      try {
-        history.value = await API.getSleeps(store.babyId, { limit: 20 }) || [];
-      } catch (e) {
-        console.warn('Sleep history error:', e);
-      } finally {
-        refreshing.value = false;
-      }
-    }
-
-    async function deleteSleep(id) {
-      try {
-        await showConfirmDialog({ title: '確認刪除', message: '刪除後無法恢復' });
-        await API.deleteSleep(id);
-        showSuccessToast('已刪除');
-        loadHistory();
-      } catch (e) { /* cancelled */ }
-    }
-
-    function sleepTitle(item) {
-      if (item.start_time && item.end_time) {
-        const dur = Math.floor((new Date(item.end_time) - new Date(item.start_time)) / 1000);
-        return fmtTime(item.start_time) + ' - ' + fmtTime(item.end_time) + ' (' + fmtDuration(dur) + ')';
-      }
-      return fmtTime(item.start_time) + ' - 進行中';
-    }
-
-    return {
-      sleeping, sleepSeconds, sleepStart, showManual, manualStart, manualEnd,
-      sleepNotes, saving, refreshing, history,
-      startSleep, stopSleep, saveManualSleep, loadHistory, deleteSleep, sleepTitle,
-      fmtDuration, fmtTime,
-    };
-  },
-};
-
-/* ---------- MORE PAGE ---------- */
-const MorePage = {
-  name: 'MorePage',
-  template: `
-    <div class="page-container">
-      <van-nav-bar title="更多功能" />
-      <div style="padding: 16px;" class="more-grid">
-        <van-grid :column-num="3" :border="false" :gutter="12">
-          <van-grid-item @click="$router.push('/more/growth')">
-            <div class="more-grid-icon" style="background:#e8f0ff; color:#1989fa;">
-              <van-icon name="chart-trending-o" />
-            </div>
-            <span>成長記錄</span>
-          </van-grid-item>
-          <van-grid-item @click="$router.push('/more/vaccine')">
-            <div class="more-grid-icon" style="background:#ffe8ea; color:#ee0a24;">
-              <van-icon name="shield-o" />
-            </div>
-            <span>疫苗接種</span>
-          </van-grid-item>
-          <van-grid-item @click="$router.push('/more/timeline')">
-            <div class="more-grid-icon" style="background:#f0e8ff; color:#7232dd;">
-              <van-icon name="orders-o" />
-            </div>
-            <span>時間線</span>
-          </van-grid-item>
-          <van-grid-item @click="$router.push('/more/stats')">
-            <div class="more-grid-icon" style="background:#e8f8ee; color:#07c160;">
-              <van-icon name="bar-chart-o" />
-            </div>
-            <span>統計</span>
-          </van-grid-item>
-          <van-grid-item @click="$router.push('/more/settings')">
-            <div class="more-grid-icon" style="background:#fff3e8; color:#ff976a;">
-              <van-icon name="setting-o" />
-            </div>
-            <span>設定</span>
-          </van-grid-item>
-        </van-grid>
-      </div>
-    </div>
-  `,
-};
-
-/* ---------- GROWTH PAGE ---------- */
-const GrowthPage = {
-  name: 'GrowthPage',
-  template: `
-    <div class="page-container">
-      <van-nav-bar title="成長記錄" left-arrow @click-left="$router.back()" />
-
-      <!-- Latest -->
-      <van-cell-group inset style="margin: 12px 16px;">
-        <van-cell title="體重" :value="latest.weight_kg ? latest.weight_kg + ' kg' : '--'" />
-        <van-cell title="身高" :value="latest.height_cm ? latest.height_cm + ' cm' : '--'" />
-        <van-cell title="頭圍" :value="latest.head_cm ? latest.head_cm + ' cm' : '--'" />
-      </van-cell-group>
-
-      <div class="px-16 mb-16">
-        <van-button type="primary" block round @click="showForm = true">
-          <van-icon name="plus" /> 新增記錄
-        </van-button>
-      </div>
-
-      <!-- Form Popup -->
-      <van-popup v-model:show="showForm" position="bottom" round style="padding: 16px; padding-bottom: 32px;">
-        <div style="font-size:16px; font-weight:600; text-align:center; margin-bottom:16px;">新增成長記錄</div>
-        <van-cell-group inset>
-          <van-field v-model="form.weight" type="number" label="體重 (kg)" placeholder="例如: 5.2" />
-          <van-field v-model="form.height" type="number" label="身高 (cm)" placeholder="例如: 62.5" />
-          <van-field v-model="form.head" type="number" label="頭圍 (cm)" placeholder="例如: 39.0" />
-          <van-field v-model="form.notes" label="備註" placeholder="選填" />
-        </van-cell-group>
-        <div style="padding: 16px 0;">
-          <van-button type="primary" block round @click="saveGrowth" :loading="saving">儲存</van-button>
-        </div>
-      </van-popup>
-
-      <!-- History -->
-      <div class="history-header">
-        <div class="history-header__title">歷史記錄</div>
-      </div>
-      <van-cell-group inset>
-        <van-swipe-cell v-for="item in history" :key="item.id">
-          <van-cell :title="fmtDate(item.recorded_at)"
-            :label="growthLabel(item)"
-            :value="item.weight_kg ? item.weight_kg + 'kg' : ''" />
-          <template #right>
-            <van-button square type="danger" text="刪除" @click="deleteGrowth(item.id)" style="height:100%;" />
-          </template>
-        </van-swipe-cell>
-        <van-empty v-if="!history.length" description="暫無成長記錄" />
-      </van-cell-group>
-    </div>
-  `,
-  setup() {
-    const showForm = ref(false);
-    const saving = ref(false);
-    const form = reactive({ weight: '', height: '', head: '', notes: '' });
-    const latest = reactive({ weight_kg: null, height_cm: null, head_cm: null });
-    const history = ref([]);
-
-    async function loadData() {
-      try {
-        const data = await API.getGrowth(store.babyId);
-        history.value = data || [];
-        if (data && data.length > 0) {
-          latest.weight_kg = data[0].weight_kg;
-          latest.height_cm = data[0].height_cm;
-          latest.head_cm = data[0].head_cm;
-        }
-      } catch (e) {
-        console.warn('Growth error:', e);
-      }
-    }
-
-    async function saveGrowth() {
-      if (!form.weight && !form.height && !form.head) return showToast('請輸入至少一項數據');
-      try {
-        saving.value = true;
-        await API.createGrowth({
-          baby_id: store.babyId,
-          weight_kg: form.weight ? Number(form.weight) : null,
-          height_cm: form.height ? Number(form.height) : null,
-          head_cm: form.head ? Number(form.head) : null,
-          notes: form.notes || null,
-          recorded_at: nowISO(),
-        });
-        showSuccessToast('已儲存');
-        showForm.value = false;
-        form.weight = ''; form.height = ''; form.head = ''; form.notes = '';
-        loadData();
-      } catch (e) {
-        showToast('儲存失敗');
-      } finally {
-        saving.value = false;
-      }
-    }
-
-    async function deleteGrowth(id) {
-      try {
-        await showConfirmDialog({ title: '確認刪除', message: '刪除後無法恢復' });
-        await API.deleteGrowth(id);
-        showSuccessToast('已刪除');
-        loadData();
-      } catch (e) { /* cancelled */ }
-    }
-
-    function growthLabel(item) {
-      const parts = [];
-      if (item.height_cm) parts.push('身高: ' + item.height_cm + 'cm');
-      if (item.head_cm) parts.push('頭圍: ' + item.head_cm + 'cm');
-      return parts.join(' · ') || '';
-    }
-
-    onMounted(loadData);
-
-    return { showForm, saving, form, latest, history, saveGrowth, deleteGrowth, growthLabel, fmtDate };
-  },
-};
-
-/* ---------- VACCINE PAGE ---------- */
-const VaccinePage = {
-  name: 'VaccinePage',
-  template: `
-    <div class="page-container">
-      <van-nav-bar title="疫苗接種" left-arrow @click-left="$router.back()" />
-
-      <van-cell-group v-for="group in groupedVaccines" :key="group.age" style="margin-bottom: 8px;">
-        <template #title>
-          <div class="vaccine-age-header">{{ group.age }}</div>
-        </template>
-        <van-cell v-for="v in group.items" :key="v.id"
-          :class="{'vaccine-item--done': v.administered_date}"
-          clickable @click="toggleVaccine(v)">
-          <template #title>
-            <span>{{ v.vaccine_name }}</span>
-          </template>
-          <template #label>
-            <span v-if="v.administered_date">已接種: {{ fmtDate(v.administered_date) }}</span>
-            <span v-else style="color: #ee0a24;">未接種</span>
-          </template>
-          <template #right-icon>
-            <van-icon v-if="v.administered_date" name="passed" color="#07c160" size="20" />
-            <van-icon v-else name="circle" color="#c8c9cc" size="20" />
-          </template>
-        </van-cell>
-      </van-cell-group>
-
-      <van-empty v-if="!vaccines.length" description="暫無疫苗資料" />
-    </div>
-  `,
-  setup() {
-    const vaccines = ref([]);
-    const groupedVaccines = computed(() => {
-      const groups = {};
-      vaccines.value.forEach(v => {
-        const age = v.scheduled_age || '其他';
-        if (!groups[age]) groups[age] = { age, items: [] };
-        groups[age].items.push(v);
-      });
-      return Object.values(groups);
-    });
-
-    async function loadData() {
-      try {
-        vaccines.value = await API.getVaccines(store.babyId) || [];
-      } catch (e) {
-        console.warn('Vaccine error:', e);
-      }
-    }
-
-    async function toggleVaccine(v) {
-      if (v.administered_date) {
-        try {
-          await showConfirmDialog({ title: '取消接種記錄？', message: v.vaccine_name });
-          await API.markVaccine(v.id, { administered_date: null });
-          showSuccessToast('已更新');
-          loadData();
-        } catch (e) { /* cancelled */ }
-      } else {
-        try {
-          await API.markVaccine(v.id, { administered_date: nowISO() });
-          showSuccessToast('已標記接種');
-          loadData();
-        } catch (e) {
-          showToast('更新失敗');
-        }
-      }
-    }
-
-    onMounted(loadData);
-
-    return { vaccines, groupedVaccines, toggleVaccine, fmtDate };
-  },
-};
-
-/* ---------- TIMELINE PAGE ---------- */
-const TimelinePage = {
-  name: 'TimelinePage',
-  template: `
-    <div class="page-container">
-      <van-nav-bar title="時間線" left-arrow @click-left="$router.back()" />
-
-      <van-dropdown-menu>
-        <van-dropdown-item v-model="filter" :options="filterOptions" @change="loadData" />
-      </van-dropdown-menu>
-
-      <van-pull-refresh v-model="refreshing" @refresh="loadData">
-        <van-cell-group inset style="margin-top: 12px;">
-          <div v-for="(group, date) in grouped" :key="date">
-            <van-divider content-position="left">{{ date }}</van-divider>
-            <van-cell v-for="item in group" :key="item.id + item.type"
-              :title="item.title" :value="fmtTime(item.time)" :label="item.detail">
-              <template #icon>
-                <van-tag :type="tagType(item.type)" style="margin-right: 8px;">{{ typeLabel(item.type) }}</van-tag>
-              </template>
-            </van-cell>
-          </div>
-          <van-empty v-if="!items.length" description="暫無記錄" />
-        </van-cell-group>
-      </van-pull-refresh>
-    </div>
-  `,
-  setup() {
-    const items = ref([]);
-    const refreshing = ref(false);
-    const filter = ref('all');
-    const filterOptions = [
-      { text: '全部', value: 'all' },
-      { text: '飲奶', value: 'feed' },
-      { text: '換片', value: 'diaper' },
-      { text: '睡眠', value: 'sleep' },
-      { text: '成長', value: 'growth' },
-    ];
-
-    const grouped = computed(() => {
-      const groups = {};
-      items.value.forEach(item => {
-        const date = fmtDate(item.time);
-        if (!groups[date]) groups[date] = [];
-        groups[date].push(item);
-      });
-      return groups;
-    });
-
-    async function loadData() {
-      try {
-        const params = { limit: 50 };
-        if (filter.value !== 'all') params.type = filter.value;
-        const data = await API.getTimeline(store.babyId, params) || [];
-        items.value = data.map(e => ({
-          ...e,
-          title: eventTitle(e),
-          detail: eventDetail(e),
-        }));
-      } catch (e) {
-        console.warn('Timeline error:', e);
-      } finally {
-        refreshing.value = false;
-      }
-    }
-
-    function eventTitle(e) {
-      if (e.type === 'feed') return '飲奶 — ' + (e.feed_type === 'breast' ? '母乳' : e.feed_type === 'bottle' ? '奶瓶' : '固體');
-      if (e.type === 'diaper') return '換片 — ' + ({ wet: '尿尿', dirty: '便便', both: '混合' }[e.diaper_type] || '');
-      if (e.type === 'sleep') return '睡眠';
-      if (e.type === 'growth') return '成長記錄';
-      return e.type;
-    }
-
-    function eventDetail(e) {
-      if (e.type === 'feed' && e.amount_ml) return e.amount_ml + 'ml';
-      if (e.type === 'feed' && e.duration) return fmtDuration(e.duration);
-      if (e.type === 'sleep' && e.duration) return fmtDuration(e.duration);
-      if (e.type === 'growth') {
-        const parts = [];
-        if (e.weight_kg) parts.push(e.weight_kg + 'kg');
-        if (e.height_cm) parts.push(e.height_cm + 'cm');
-        return parts.join(' · ');
-      }
-      return '';
-    }
-
-    function tagType(type) {
-      return { feed: 'warning', diaper: 'success', sleep: 'primary', growth: 'default' }[type] || 'default';
-    }
-    function typeLabel(type) {
-      return { feed: '飲奶', diaper: '換片', sleep: '睡眠', growth: '成長' }[type] || type;
-    }
-
-    onMounted(loadData);
-
-    return { items, refreshing, filter, filterOptions, grouped, loadData, tagType, typeLabel, fmtTime };
-  },
-};
-
-/* ---------- STATS PAGE ---------- */
-const StatsPage = {
-  name: 'StatsPage',
-  template: `
-    <div class="page-container">
-      <van-nav-bar title="統計" left-arrow @click-left="$router.back()" />
-
-      <van-tabs v-model:active="activeTab" animated>
-        <van-tab title="飲奶">
-          <van-cell-group inset style="margin: 12px 16px;">
-            <van-cell title="今日次數" :value="feedStats.todayCount + ' 次'" />
-            <van-cell title="今日總量" :value="feedStats.todayTotal + ' ml'" />
-            <van-cell title="最近一次" :value="feedStats.lastFeedTime" />
-            <van-cell title="7日平均" :value="feedStats.weekAvg + ' ml/日'" />
-          </van-cell-group>
-        </van-tab>
-        <van-tab title="換片">
-          <van-cell-group inset style="margin: 12px 16px;">
-            <van-cell title="今日次數" :value="diaperStats.todayCount + ' 次'" />
-            <van-cell title="尿尿" :value="diaperStats.wetCount + ' 次'" />
-            <van-cell title="便便" :value="diaperStats.dirtyCount + ' 次'" />
-            <van-cell title="7日平均" :value="diaperStats.weekAvg + ' 次/日'" />
-          </van-cell-group>
-        </van-tab>
-        <van-tab title="睡眠">
-          <van-cell-group inset style="margin: 12px 16px;">
-            <van-cell title="今日次數" :value="sleepStats.todayCount + ' 次'" />
-            <van-cell title="今日總時長" :value="sleepStats.todayHours + ' 小時'" />
-            <van-cell title="最長一次" :value="sleepStats.longestToday" />
-            <van-cell title="7日平均" :value="sleepStats.weekAvg + ' 小時/日'" />
-          </van-cell-group>
-        </van-tab>
-      </van-tabs>
-    </div>
-  `,
-  setup() {
-    const activeTab = ref(0);
-    const feedStats = reactive({ todayCount: 0, todayTotal: 0, lastFeedTime: '--', weekAvg: 0 });
-    const diaperStats = reactive({ todayCount: 0, wetCount: 0, dirtyCount: 0, weekAvg: 0 });
-    const sleepStats = reactive({ todayCount: 0, todayHours: 0, longestToday: '--', weekAvg: 0 });
-
-    async function loadData() {
-      try {
-        const [feeds, diapers, sleeps] = await Promise.all([
-          API.getFeeds(store.babyId, { date: todayStart() }),
-          API.getDiapers(store.babyId, { date: todayStart() }),
-          API.getSleeps(store.babyId, { date: todayStart() }),
-        ]);
-
-        // Feed stats
-        feedStats.todayCount = feeds?.length || 0;
-        feedStats.todayTotal = feeds?.reduce((s, f) => s + (f.amount_ml || 0), 0) || 0;
-        if (feeds?.length > 0) {
-          feedStats.lastFeedTime = fmtTime(feeds[0].start_time);
-        }
-        feedStats.weekAvg = Math.round(feedStats.todayTotal * 7 / Math.max(feedStats.todayCount, 1));
-
-        // Diaper stats
-        diaperStats.todayCount = diapers?.length || 0;
-        diaperStats.wetCount = diapers?.filter(d => d.type === 'wet' || d.type === 'both').length || 0;
-        diaperStats.dirtyCount = diapers?.filter(d => d.type === 'dirty' || d.type === 'both').length || 0;
-        diaperStats.weekAvg = diaperStats.todayCount;
-
-        // Sleep stats
-        sleepStats.todayCount = sleeps?.length || 0;
-        let totalMin = 0;
-        let longestMin = 0;
+        homeStats.feedCount = feeds?.length || 0;
+        homeStats.feedTotal = feeds?.reduce((s, f) => s + (f.amount_ml || 0), 0) || 0;
+        homeStats.diaperTotal = diapers?.length || 0;
+        homeStats.diaperWet = diapers?.filter(d => d.type === 'wet' || d.type === 'both').length || 0;
+        homeStats.diaperDirty = diapers?.filter(d => d.type === 'dirty' || d.type === 'both').length || 0;
+        homeStats.sleepCount = sleeps?.length || 0;
+        let totalMin = 0, longestMin = 0;
         sleeps?.forEach(sl => {
           if (sl.start_time && sl.end_time) {
             const dur = (new Date(sl.end_time) - new Date(sl.start_time)) / 60000;
@@ -1264,205 +194,764 @@ const StatsPage = {
             if (dur > longestMin) longestMin = dur;
           }
         });
-        sleepStats.todayHours = (totalMin / 60).toFixed(1);
-        sleepStats.longestToday = longestMin > 0 ? fmtDuration(Math.floor(longestMin * 60)) : '--';
-        sleepStats.weekAvg = sleepStats.todayHours;
-      } catch (e) {
-        console.warn('Stats error:', e);
+        homeStats.sleepHours = (totalMin / 60).toFixed(1);
+        homeStats.sleepLongest = longestMin;
+        // Build recent items
+        recentItems.value = (timeline || []).slice(0, 8).map(e => {
+          let icon = 'milk', cls = 'milk', title = '', detail = '', vol = '';
+          if (e.type === 'feed') {
+            icon = 'i-milk'; cls = 'milk';
+            title = e.feed_type === 'breast' ? '母乳' : '配方奶';
+            detail = e.notes || '';
+            vol = e.amount_ml ? e.amount_ml + 'ml' : '';
+          } else if (e.type === 'diaper') {
+            const dt = e.diaper_type || e.type_detail;
+            if (dt === 'dirty' || dt === 'both') { icon = 'i-poo'; cls = 'poo'; title = dt === 'both' ? '大便 + 小便' : '大便'; }
+            else { icon = 'i-drop'; cls = 'pee'; title = '小便'; }
+            detail = e.notes || (e.color ? e.color : '');
+          } else if (e.type === 'sleep') {
+            if (e.end_time) { icon = 'i-sun'; cls = 'slp'; title = '醒咗'; detail = e.duration ? '瞓咗 ' + fmtDurCN(e.duration) : ''; }
+            else { icon = 'i-moon'; cls = 'slp'; title = '瞓著咗'; }
+          }
+          return { id: e.id, type: e.type, icon, cls, title, detail, vol, time: fmtTime(e.time) };
+        });
+      } catch (e) { console.warn('Home load error:', e); }
+    }
+
+    async function loadFeedHistory() {
+      try { feedHistory.value = await API.getFeeds(store.babyId, { limit: 20 }) || []; } catch (e) { console.warn(e); }
+    }
+    async function loadDiaperHistory() {
+      try { diaperHistory.value = await API.getDiapers(store.babyId, { limit: 20 }) || []; } catch (e) { console.warn(e); }
+    }
+    async function loadSleepHistory() {
+      try { sleepHistory.value = await API.getSleeps(store.babyId, { limit: 20 }) || []; } catch (e) { console.warn(e); }
+    }
+
+    // ===== FEED ACTIONS =====
+    function adjFeedAmount(delta) {
+      feedAmount.value = Math.max(0, feedAmount.value + delta);
+    }
+
+    async function saveFeed() {
+      if (feedAmount.value <= 0) return showToast('請輸入奶量');
+      try {
+        const now = new Date();
+        if (feedTime.value) {
+          const [h, m] = feedTime.value.split(':');
+          now.setHours(parseInt(h), parseInt(m), 0, 0);
+        }
+        await API.createFeed({
+          baby_id: store.babyId,
+          feed_type: 'bottle',
+          start_time: now.toISOString(),
+          amount_ml: feedAmount.value,
+          formula_type: feedType.value === 'formula' ? '配方奶' : '母乳',
+          notes: feedNotes.value || null,
+        });
+        showToast('餵奶記錄已儲存');
+        feedNotes.value = '';
+        closeSub();
+        loadFeedHistory();
+        loadHomeData();
+      } catch (e) { showToast('儲存失敗'); }
+    }
+
+    async function deleteFeed(id) {
+      const ok = await confirmDialog('確認刪除', '刪除後無法恢復');
+      if (!ok) return;
+      try {
+        await API.deleteFeed(id);
+        showToast('已刪除');
+        loadFeedHistory();
+        loadHomeData();
+      } catch (e) { showToast('刪除失敗'); }
+    }
+
+    // ===== DIAPER ACTIONS =====
+    function showPooFields() {
+      return diaperType.value === 'poo' || diaperType.value === 'both';
+    }
+
+    async function saveDiaper() {
+      try {
+        const now = new Date();
+        if (diaperTime.value) {
+          const [h, m] = diaperTime.value.split(':');
+          now.setHours(parseInt(h), parseInt(m), 0, 0);
+        }
+        const typeMap = { pee: 'wet', poo: 'dirty', both: 'both', dry: 'dry' };
+        await API.createDiaper({
+          baby_id: store.babyId,
+          type: typeMap[diaperType.value] || diaperType.value,
+          color: showPooFields() ? diaperColor.value : null,
+          consistency: showPooFields() ? diaperConsistency.value : null,
+          notes: diaperNotes.value || null,
+          changed_at: now.toISOString(),
+        });
+        showToast('換片記錄已儲存');
+        diaperNotes.value = '';
+        closeSub();
+        loadDiaperHistory();
+        loadHomeData();
+      } catch (e) { showToast('儲存失敗'); }
+    }
+
+    async function deleteDiaper(id) {
+      const ok = await confirmDialog('確認刪除', '刪除後無法恢復');
+      if (!ok) return;
+      try {
+        await API.deleteDiaper(id);
+        showToast('已刪除');
+        loadDiaperHistory();
+        loadHomeData();
+      } catch (e) { showToast('刪除失敗'); }
+    }
+
+    // ===== SLEEP ACTIONS =====
+    function restoreSleepTimer() {
+      const saved = localStorage.getItem('sleepTimer');
+      if (saved) {
+        const data = JSON.parse(saved);
+        if (data.running) {
+          sleepStartISO.value = data.startISO;
+          isSleeping.value = true;
+          sleepSeconds.value = Math.floor((Date.now() - data.startedAt) / 1000);
+          sleepTimer = setInterval(() => { sleepSeconds.value++; }, 1000);
+        }
       }
     }
 
-    onMounted(loadData);
-
-    return { activeTab, feedStats, diaperStats, sleepStats };
-  },
-};
-
-/* ---------- SETTINGS PAGE ---------- */
-const SettingsPage = {
-  name: 'SettingsPage',
-  template: `
-    <div class="page-container">
-      <van-nav-bar title="設定" left-arrow @click-left="$router.back()" />
-
-      <van-cell-group inset title="BB資料" style="margin-top: 12px;">
-        <van-field v-model="form.name" label="名稱" placeholder="BB暱稱" />
-        <van-field v-model="form.birthday" label="出生日期" placeholder="YYYY-MM-DD" />
-        <van-field v-model="form.gender" is-link readonly label="性別" @click="showGenderPicker = true" />
-        <van-field v-model="form.birth_weight" type="number" label="出生體重 (kg)" placeholder="選填" />
-        <van-field v-model="form.birth_height" type="number" label="出生身高 (cm)" placeholder="選填" />
-      </van-cell-group>
-
-      <div class="px-16" style="padding-top: 12px;">
-        <van-button type="primary" block round @click="saveBaby" :loading="saving">儲存</van-button>
-      </div>
-
-      <van-cell-group inset title="功能" style="margin-top: 16px;">
-        <van-cell title="匯出CSV" is-link @click="exportCSV">
-          <template #icon><van-icon name="down" style="margin-right:8px;" /></template>
-        </van-cell>
-        <van-cell title="新增BB" is-link @click="showAddBaby = true">
-          <template #icon><van-icon name="friends-o" style="margin-right:8px;" /></template>
-        </van-cell>
-      </van-cell-group>
-
-      <van-cell-group inset title="關於" style="margin-top: 16px; margin-bottom: 24px;">
-        <van-cell title="版本" value="1.0.0" />
-      </van-cell-group>
-
-      <!-- Gender Picker -->
-      <van-popup v-model:show="showGenderPicker" position="bottom" round>
-        <van-picker title="性別" :columns="genderOptions" @confirm="onGenderConfirm" @cancel="showGenderPicker = false" />
-      </van-popup>
-
-      <!-- Add Baby Popup -->
-      <van-popup v-model:show="showAddBaby" position="bottom" round style="padding: 16px; padding-bottom: 32px;">
-        <div style="font-size:16px; font-weight:600; text-align:center; margin-bottom:16px;">新增BB</div>
-        <van-cell-group inset>
-          <van-field v-model="newBaby.name" label="名稱" placeholder="BB暱稱" />
-          <van-field v-model="newBaby.birthday" label="出生日期" placeholder="YYYY-MM-DD" />
-          <van-field v-model="newBaby.gender" is-link readonly label="性別" @click="showNewGenderPicker = true" />
-        </van-cell-group>
-        <div style="padding: 16px 0;">
-          <van-button type="primary" block round @click="addBaby" :loading="saving">新增</van-button>
-        </div>
-      </van-popup>
-      <van-popup v-model:show="showNewGenderPicker" position="bottom" round>
-        <van-picker title="性別" :columns="genderOptions" @confirm="onNewGenderConfirm" @cancel="showNewGenderPicker = false" />
-      </van-popup>
-    </div>
-  `,
-  setup() {
-    const form = reactive({ name: '', birthday: '', gender: '', birth_weight: '', birth_height: '' });
-    const saving = ref(false);
-    const showGenderPicker = ref(false);
-    const showAddBaby = ref(false);
-    const showNewGenderPicker = ref(false);
-    const newBaby = reactive({ name: '', birthday: '', gender: '' });
-    const genderOptions = [
-      { text: '男', value: 'M' },
-      { text: '女', value: 'F' },
-    ];
-
-    onMounted(() => {
-      if (store.baby) {
-        form.name = store.baby.name || '';
-        form.birthday = store.baby.birthday || '';
-        form.gender = store.baby.gender === 'M' ? '男' : store.baby.gender === 'F' ? '女' : '';
-        form.birth_weight = store.baby.birth_weight_kg || '';
-        form.birth_height = store.baby.birth_height_cm || '';
+    function toggleSleep() {
+      if (!isSleeping.value) {
+        // Start sleeping
+        isSleeping.value = true;
+        sleepSeconds.value = 0;
+        sleepStartISO.value = nowISO();
+        localStorage.setItem('sleepTimer', JSON.stringify({
+          running: true, startedAt: Date.now(), startISO: sleepStartISO.value
+        }));
+        sleepTimer = setInterval(() => { sleepSeconds.value++; }, 1000);
+      } else {
+        // Wake up
+        isSleeping.value = false;
+        if (sleepTimer) { clearInterval(sleepTimer); sleepTimer = null; }
+        localStorage.removeItem('sleepTimer');
+        if (sleepSeconds.value < 60) { sleepSeconds.value = 0; return; }
+        API.createSleep({
+          baby_id: store.babyId,
+          start_time: sleepStartISO.value,
+          end_time: nowISO(),
+          notes: null,
+        }).then(() => {
+          showToast('睡眠記錄已儲存');
+          sleepSeconds.value = 0;
+          loadSleepHistory();
+          loadHomeData();
+        }).catch(() => { showToast('儲存失敗'); });
       }
+    }
+
+    async function saveManualSleep() {
+      if (!manualSleepStart.value || !manualSleepEnd.value) {
+        return showToast('請輸入入睡和醒來時間');
+      }
+      try {
+        // Build date from time inputs
+        const today = new Date();
+        const [sh, sm] = manualSleepStart.value.split(':');
+        const [eh, em] = manualSleepEnd.value.split(':');
+        const start = new Date(today);
+        start.setHours(parseInt(sh), parseInt(sm), 0, 0);
+        const end = new Date(today);
+        end.setHours(parseInt(eh), parseInt(em), 0, 0);
+        if (end <= start) end.setDate(end.getDate() + 1);
+        await API.createSleep({
+          baby_id: store.babyId,
+          start_time: start.toISOString(),
+          end_time: end.toISOString(),
+          notes: sleepNotes.value || null,
+        });
+        showToast('睡眠記錄已儲存');
+        closeSub();
+        loadSleepHistory();
+        loadHomeData();
+      } catch (e) { showToast('儲存失敗'); }
+    }
+
+    async function deleteSleep(id) {
+      const ok = await confirmDialog('確認刪除', '刪除後無法恢復');
+      if (!ok) return;
+      try {
+        await API.deleteSleep(id);
+        showToast('已刪除');
+        loadSleepHistory();
+        loadHomeData();
+      } catch (e) { showToast('刪除失敗'); }
+    }
+
+    // ===== PROFILE ACTIONS =====
+    function loadProfile() {
+      if (store.baby) {
+        profileForm.name = store.baby.name || '';
+        profileForm.gender = store.baby.gender === 'F' ? '女' : '男';
+        profileForm.birthday = store.baby.birthday || '';
+        profileForm.birth_weight = store.baby.birth_weight_kg ? store.baby.birth_weight_kg + ' kg' : '';
+        profileForm.birth_height = store.baby.birth_height_cm ? store.baby.birth_height_cm + ' cm' : '';
+      }
+    }
+
+    async function saveProfile() {
+      if (!profileForm.name) return showToast('請輸入名稱');
+      try {
+        const genderMap = { '男': 'M', '女': 'F' };
+        const wt = parseFloat(profileForm.birth_weight);
+        const ht = parseFloat(profileForm.birth_height);
+        await API.updateBaby(store.babyId, {
+          name: profileForm.name,
+          birthday: profileForm.birthday || null,
+          gender: genderMap[profileForm.gender] || null,
+          birth_weight_kg: isNaN(wt) ? null : wt,
+          birth_height_cm: isNaN(ht) ? null : ht,
+        });
+        showToast('資料已更新');
+        closeSub();
+        await loadBaby();
+      } catch (e) { showToast('儲存失敗'); }
+    }
+
+    // Date nav
+    const dateStr = computed(() => fmtDateCN(new Date().toISOString()));
+
+    // Feed summary computed
+    const feedSummary = computed(() => {
+      const items = feedHistory.value;
+      const count = items.length;
+      const total = items.reduce((s, f) => s + (f.amount_ml || 0), 0);
+      const avg = count > 0 ? Math.round(total / count) : 0;
+      return { count, total, avg };
     });
 
-    function onGenderConfirm({ selectedOptions }) {
-      form.gender = selectedOptions[0]?.text || '';
-      showGenderPicker.value = false;
-    }
-    function onNewGenderConfirm({ selectedOptions }) {
-      newBaby.gender = selectedOptions[0]?.text || '';
-      showNewGenderPicker.value = false;
+    // Diaper summary computed
+    const diaperSummary = computed(() => {
+      const items = diaperHistory.value;
+      const wet = items.filter(d => d.type === 'wet' || d.type === 'both').length;
+      const dirty = items.filter(d => d.type === 'dirty' || d.type === 'both').length;
+      return { wet, dirty, total: items.length };
+    });
+
+    // Sleep summary computed
+    const sleepSummaryData = computed(() => {
+      const items = sleepHistory.value;
+      let totalMin = 0, longestMin = 0, count = 0;
+      items.forEach(sl => {
+        if (sl.start_time && sl.end_time) {
+          count++;
+          const dur = (new Date(sl.end_time) - new Date(sl.start_time)) / 60000;
+          totalMin += dur;
+          if (dur > longestMin) longestMin = dur;
+        }
+      });
+      return {
+        totalHours: (totalMin / 60).toFixed(1),
+        longestHours: (longestMin / 60).toFixed(1),
+        count,
+      };
+    });
+
+    // Set default times
+    function initTimes() {
+      const now = new Date();
+      const t = pad(now.getHours()) + ':' + pad(now.getMinutes());
+      feedTime.value = t;
+      diaperTime.value = t;
     }
 
-    async function saveBaby() {
-      if (!form.name) return showToast('請輸入名稱');
-      try {
-        saving.value = true;
-        const genderMap = { '男': 'M', '女': 'F' };
-        await API.updateBaby(store.babyId, {
-          name: form.name,
-          birthday: form.birthday || null,
-          gender: genderMap[form.gender] || null,
-          birth_weight_kg: form.birth_weight ? Number(form.birth_weight) : null,
-          birth_height_cm: form.birth_height ? Number(form.birth_height) : null,
-        });
-        showSuccessToast('已儲存');
-        await loadBaby();
-      } catch (e) {
-        showToast('儲存失敗');
-      } finally {
-        saving.value = false;
-      }
+    // Computed feed/diaper label helpers
+    function feedItemType(item) {
+      if (item.feed_type === 'breast') return '母乳';
+      return item.formula_type || '配方奶';
+    }
+    function diaperItemLabel(item) {
+      const map = { wet: '小便', dirty: '大便', both: '大便 + 小便', dry: '乾淨' };
+      return map[item.type] || item.type;
+    }
+    function diaperItemIcon(item) {
+      if (item.type === 'dirty' || item.type === 'both') return 'i-poo';
+      return 'i-drop';
+    }
+    function diaperItemCls(item) {
+      if (item.type === 'dirty' || item.type === 'both') return 'poo';
+      return 'pee';
+    }
+    function diaperItemDetail(item) {
+      const parts = [];
+      if (item.color) parts.push(item.color);
+      if (item.consistency) parts.push(item.consistency);
+      if (item.notes) parts.push(item.notes);
+      return parts.join('、') || '';
     }
 
-    async function addBaby() {
-      if (!newBaby.name) return showToast('請輸入名稱');
-      try {
-        saving.value = true;
-        const genderMap = { '男': 'M', '女': 'F' };
-        await API.createBaby({
-          name: newBaby.name,
-          birthday: newBaby.birthday || null,
-          gender: genderMap[newBaby.gender] || null,
-        });
-        showSuccessToast('已新增');
-        showAddBaby.value = false;
-        await loadBaby();
-      } catch (e) {
-        showToast('新增失敗');
-      } finally {
-        saving.value = false;
-      }
-    }
+    // ===== LIFECYCLE =====
+    onMounted(async () => {
+      await loadBaby();
+      loadProfile();
+      initTimes();
+      loadHomeData();
+      loadFeedHistory();
+      loadDiaperHistory();
+      loadSleepHistory();
+      restoreSleepTimer();
+    });
 
-    async function exportCSV() {
-      try {
-        showLoadingToast({ message: '匯出中...', forbidClick: true });
-        const data = await API.exportCSV(store.babyId);
-        closeToast();
-        // Download CSV
-        const blob = new Blob([data], { type: 'text/csv' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'baby-data.csv';
-        a.click();
-        URL.revokeObjectURL(url);
-      } catch (e) {
-        closeToast();
-        showToast('匯出失敗');
-      }
-    }
+    onUnmounted(() => {
+      if (sleepTimer) clearInterval(sleepTimer);
+    });
+
+    // Watch page changes to refresh data
+    watch(currentPage, (p) => {
+      if (p === 0) loadHomeData();
+      if (p === 1) loadFeedHistory();
+      if (p === 2) loadDiaperHistory();
+      if (p === 3) loadSleepHistory();
+    });
 
     return {
-      form, saving, showGenderPicker, showAddBaby, showNewGenderPicker, newBaby,
-      genderOptions, onGenderConfirm, onNewGenderConfirm, saveBaby, addBaby, exportCSV,
+      // Nav
+      currentPage, activeSub, go, openSub, closeSub,
+      // Baby
+      baby, babyName, babyAge, babyBirthday, daysSinceBirth,
+      // Home
+      homeStats, recentItems, dateStr,
+      // Feed
+      feedHistory, feedAmount, feedType, feedTime, feedNotes,
+      adjFeedAmount, saveFeed, deleteFeed, feedSummary, feedItemType,
+      // Diaper
+      diaperHistory, diaperType, diaperTime, diaperColor, diaperConsistency,
+      diaperAmount, diaperNotes, showPooFields, saveDiaper, deleteDiaper,
+      diaperSummary, diaperItemLabel, diaperItemIcon, diaperItemCls, diaperItemDetail,
+      // Sleep
+      sleepHistory, isSleeping, sleepSeconds, sleepStartISO,
+      toggleSleep, saveManualSleep, deleteSleep,
+      manualSleepStart, manualSleepEnd, sleepQuality, sleepNotes,
+      sleepSummaryData,
+      // Profile
+      profileForm, saveProfile, loadProfile,
+      // Dialog
+      dlgVisible, dlgTitle, dlgMsg, dlgConfirm, dlgCancel,
+      // Helpers
+      fmtTime, fmtDate, fmtDuration, fmtDurCN, showToast, initTimes,
     };
   },
-};
+  template: `
+  <!-- Confirm Dialog -->
+  <div class="dlg-overlay" v-if="dlgVisible" @click.self="dlgCancel">
+    <div class="dlg-box">
+      <div class="dlg-body">
+        <div class="dlg-title">{{ dlgTitle }}</div>
+        <div class="dlg-msg">{{ dlgMsg }}</div>
+      </div>
+      <div class="dlg-actions">
+        <button @click="dlgCancel">取消</button>
+        <button @click="dlgConfirm">確認</button>
+      </div>
+    </div>
+  </div>
 
-/* ============================================================
- * ROUTER
- * ============================================================ */
-const routes = [
-  { path: '/', component: HomePage },
-  { path: '/feed', component: FeedPage },
-  { path: '/diaper', component: DiaperPage },
-  { path: '/sleep', component: SleepPage },
-  { path: '/more', component: MorePage },
-  { path: '/more/growth', component: GrowthPage },
-  { path: '/more/vaccine', component: VaccinePage },
-  { path: '/more/timeline', component: TimelinePage },
-  { path: '/more/stats', component: StatsPage },
-  { path: '/more/settings', component: SettingsPage },
-];
+  <!-- ===== HOME ===== -->
+  <div class="page" :class="{active: currentPage === 0}">
+    <div class="hero">
+      <div class="av"><svg><use href="#i-baby"/></svg></div>
+      <div class="inf">
+        <h2>{{ babyName }}</h2>
+        <p>出生 {{ daysSinceBirth }} 天 · {{ babyBirthday }}</p>
+      </div>
+      <div class="set-btn" @click="go(4)"><svg><use href="#i-gear"/></svg></div>
+    </div>
+    <div class="sc">
+      <div class="si" @click="go(1)"><span class="sn">{{ homeStats.feedTotal }}</span><span class="sl">今日奶量(ml)</span></div>
+      <div class="si" @click="go(1)"><span class="sn">{{ homeStats.feedCount }}</span><span class="sl">餵奶次數</span></div>
+      <div class="si" @click="go(2)"><span class="sn">{{ homeStats.diaperWet }}</span><span class="sl">小便</span></div>
+      <div class="si" @click="go(3)"><span class="sn">{{ homeStats.sleepHours }}h</span><span class="sl">今日睡眠</span></div>
+    </div>
+    <div class="gd">
+      <div class="gi" @click="openSub('af'); initTimes()"><div class="gi-ico" style="color:var(--blue)"><svg><use href="#i-plus"/></svg></div><span>記錄飲奶</span></div>
+      <div class="gi" @click="openSub('ad'); initTimes()"><div class="gi-ico" style="color:var(--green)"><svg><use href="#i-edit"/></svg></div><span>記錄換片</span></div>
+      <div class="gi" @click="openSub('as')"><div class="gi-ico" style="color:var(--purple)"><svg><use href="#i-moon"/></svg></div><span>記錄睡眠</span></div>
+      <div class="gi" @click="openSub('g6')"><div class="gi-ico" style="color:var(--red)"><svg><use href="#i-warn"/></svg></div><span>蠶豆病</span></div>
+      <div class="gi" @click="openSub('he')"><div class="gi-ico" style="color:var(--warn)"><svg><use href="#i-shield"/></svg></div><span>疫苗接種</span></div>
+      <div class="gi" @click="openSub('st')"><div class="gi-ico" style="color:var(--teal)"><svg><use href="#i-barchart"/></svg></div><span>統計報告</span></div>
+      <div class="gi" @click="openSub('ex')"><div class="gi-ico" style="color:rgba(0,0,0,0.4)"><svg><use href="#i-pdf"/></svg></div><span>匯出PDF</span></div>
+      <div class="gi" @click="openSub('rm')"><div class="gi-ico" style="color:var(--orange)"><svg><use href="#i-bell"/></svg></div><span>提醒設定</span></div>
+    </div>
+    <div class="st">今日記錄</div>
+    <div class="cs" v-if="recentItems.length">
+      <div class="cl" v-for="item in recentItems" :key="item.id + item.type">
+        <div class="ri" :class="item.cls"><svg><use :href="'#' + item.icon"/></svg></div>
+        <div class="cb"><div class="ct">{{ item.title }}</div><div class="cd" v-if="item.detail">{{ item.detail }}</div></div>
+        <div class="cr"><div class="cv" v-if="item.vol">{{ item.vol }}</div><div class="cm">{{ item.time }}</div></div>
+      </div>
+    </div>
+    <div class="empty-state" v-else><svg><use href="#i-clock"/></svg><p>今日暫無記錄</p></div>
+  </div>
 
-const router = VueRouter.createRouter({
-  history: VueRouter.createWebHashHistory(),
-  routes,
+  <!-- ===== FEEDING ===== -->
+  <div class="page" :class="{active: currentPage === 1}">
+    <div class="nb"><div class="nb-ph"></div><span class="nb-t">飲奶記錄</span><span class="nb-a" @click="openSub('af'); initTimes()"><svg><use href="#i-plus"/></svg></span></div>
+    <div class="dn"><span class="da"><svg><use href="#i-back"/></svg></span><span class="dt">{{ dateStr }}</span><span class="da"><svg><use href="#i-arrow"/></svg></span></div>
+    <div class="sb">
+      <div class="sbi"><span class="sbv" style="color:var(--blue)">{{ feedSummary.total }}</span><span class="sbl">總奶量(ml)</span></div>
+      <div class="sbi"><span class="sbv" style="color:var(--green)">{{ feedSummary.count }}</span><span class="sbl">餵奶次數</span></div>
+      <div class="sbi"><span class="sbv" style="color:var(--orange)">{{ feedSummary.avg }}</span><span class="sbl">平均(ml)</span></div>
+    </div>
+    <div class="cs" v-if="feedHistory.length">
+      <div class="cl" v-for="item in feedHistory" :key="item.id">
+        <div class="ri milk"><svg><use href="#i-milk"/></svg></div>
+        <div class="cb">
+          <div class="ct">{{ feedItemType(item) }}</div>
+          <div class="cd">{{ fmtTime(item.start_time) }}<template v-if="item.notes"> · {{ item.notes }}</template></div>
+        </div>
+        <div class="cr">
+          <div class="cv" v-if="item.amount_ml">{{ item.amount_ml }}ml</div>
+          <div class="cm" style="color:var(--red);cursor:pointer" @click="deleteFeed(item.id)"><svg style="width:14px;height:14px"><use href="#i-trash"/></svg></div>
+        </div>
+      </div>
+    </div>
+    <div class="empty-state" v-else><svg><use href="#i-bottle"/></svg><p>暫無飲奶記錄</p></div>
+  </div>
+
+  <!-- ===== DIAPER ===== -->
+  <div class="page" :class="{active: currentPage === 2}">
+    <div class="nb"><div class="nb-ph"></div><span class="nb-t">換片記錄</span><span class="nb-a" @click="openSub('ad'); initTimes()"><svg><use href="#i-plus"/></svg></span></div>
+    <div class="dn"><span class="da"><svg><use href="#i-back"/></svg></span><span class="dt">{{ dateStr }}</span><span class="da"><svg><use href="#i-arrow"/></svg></span></div>
+    <div class="sb">
+      <div class="sbi"><span class="sbv" style="color:var(--orange)">{{ diaperSummary.wet }}</span><span class="sbl">小便</span></div>
+      <div class="sbi"><span class="sbv" style="color:#E67E22">{{ diaperSummary.dirty }}</span><span class="sbl">大便</span></div>
+      <div class="sbi"><span class="sbv" style="color:var(--blue)">{{ diaperSummary.total }}</span><span class="sbl">總換片</span></div>
+    </div>
+    <div class="cs" v-if="diaperHistory.length">
+      <div class="cl" v-for="item in diaperHistory" :key="item.id">
+        <div class="ri" :class="diaperItemCls(item)"><svg><use :href="'#' + diaperItemIcon(item)"/></svg></div>
+        <div class="cb">
+          <div class="ct">{{ diaperItemLabel(item) }}</div>
+          <div class="cd" v-if="diaperItemDetail(item)">{{ diaperItemDetail(item) }}</div>
+        </div>
+        <div class="cr">
+          <div class="cm">{{ fmtTime(item.changed_at) }}</div>
+          <div class="cm" style="color:var(--red);cursor:pointer;margin-top:4px" @click="deleteDiaper(item.id)"><svg style="width:14px;height:14px"><use href="#i-trash"/></svg></div>
+        </div>
+      </div>
+    </div>
+    <div class="empty-state" v-else><svg><use href="#i-diaper"/></svg><p>暫無換片記錄</p></div>
+  </div>
+
+  <!-- ===== SLEEP ===== -->
+  <div class="page" :class="{active: currentPage === 3}">
+    <div class="nb"><div class="nb-ph"></div><span class="nb-t">睡眠記錄</span><span class="nb-a" @click="openSub('as')"><svg><use href="#i-plus"/></svg></span></div>
+    <div class="sleep-now">
+      <div class="sn-dot" :class="isSleeping ? 'sleeping' : 'awake'"></div>
+      <span class="sn-status">{{ isSleeping ? '瞓緊覺' : '清醒中' }}</span>
+      <span style="font-size:13px;color:var(--t2)" v-if="isSleeping"> · {{ fmtDuration(sleepSeconds) }}</span>
+    </div>
+    <div class="sleep-big">
+      <button :class="isSleeping ? 'sb-wake' : 'sb-sleep'" @click="toggleSleep">
+        <svg><use :href="isSleeping ? '#i-sun' : '#i-moon'"/></svg>
+        <span>{{ isSleeping ? '醒咗' : '瞓覺' }}</span>
+      </button>
+    </div>
+    <div class="dn"><span class="da"><svg><use href="#i-back"/></svg></span><span class="dt">{{ dateStr }}</span><span class="da"><svg><use href="#i-arrow"/></svg></span></div>
+    <div class="sb">
+      <div class="sbi"><span class="sbv" style="color:var(--purple)">{{ sleepSummaryData.totalHours }}h</span><span class="sbl">今日總睡眠</span></div>
+      <div class="sbi"><span class="sbv" style="color:var(--purple)">{{ sleepSummaryData.longestHours }}h</span><span class="sbl">最長連續</span></div>
+      <div class="sbi"><span class="sbv" style="color:var(--purple)">{{ sleepSummaryData.count }}</span><span class="sbl">睡眠次數</span></div>
+    </div>
+    <div class="st">今日睡眠記錄</div>
+    <div class="cs" v-if="sleepHistory.length">
+      <div class="cl" v-for="item in sleepHistory" :key="item.id">
+        <div class="ri slp"><svg><use :href="item.end_time ? '#i-sun' : '#i-moon'"/></svg></div>
+        <div class="cb">
+          <div class="ct">{{ item.end_time ? '醒咗' : '瞓著咗' }}</div>
+          <div class="cd" v-if="item.start_time && item.end_time">瞓咗 {{ fmtDurCN(Math.floor((new Date(item.end_time) - new Date(item.start_time)) / 1000)) }}</div>
+        </div>
+        <div class="cr">
+          <div class="cm">{{ fmtTime(item.end_time || item.start_time) }}</div>
+          <div class="cm" style="color:var(--red);cursor:pointer;margin-top:4px" @click="deleteSleep(item.id)"><svg style="width:14px;height:14px"><use href="#i-trash"/></svg></div>
+        </div>
+      </div>
+    </div>
+    <div class="empty-state" v-else><svg><use href="#i-moon"/></svg><p>暫無睡眠記錄</p></div>
+  </div>
+
+  <!-- ===== SETTINGS ===== -->
+  <div class="page" :class="{active: currentPage === 4}">
+    <div class="hero">
+      <div class="av"><svg><use href="#i-baby"/></svg></div>
+      <div class="inf">
+        <h2>{{ babyName }}</h2>
+        <p>{{ babyBirthday }}出生 · {{ daysSinceBirth }}日大</p>
+      </div>
+    </div>
+    <div class="sc">
+      <div class="si"><span class="sn">{{ homeStats.feedCount }}</span><span class="sl">今日餵奶</span></div>
+      <div class="si"><span class="sn">{{ homeStats.diaperTotal }}</span><span class="sl">今日換片</span></div>
+      <div class="si"><span class="sn">{{ homeStats.sleepHours }}h</span><span class="sl">今日睡眠</span></div>
+    </div>
+    <div class="st">{{ babyName }}管理</div>
+    <div class="cs">
+      <div class="cl" @click="loadProfile(); openSub('pf')"><span class="ci"><svg><use href="#i-user"/></svg></span><div class="cb"><div class="ct">{{ babyName }}資料設定</div></div><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
+      <div class="cl" @click="openSub('rm')"><span class="ci" style="color:var(--orange)"><svg><use href="#i-bell"/></svg></span><div class="cb"><div class="ct">提醒及推送通知</div><div class="cd">餵奶間隔、疫苗到期提醒</div></div><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
+    </div>
+    <div class="st">健康</div>
+    <div class="cs">
+      <div class="cl" @click="openSub('he')"><span class="ci" style="color:var(--green)"><svg><use href="#i-shield"/></svg></span><div class="cb"><div class="ct">疫苗接種計劃</div><div class="cd">香港兒童免疫接種計劃</div></div><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
+      <div class="cl" @click="openSub('hs')"><span class="ci" style="color:var(--blue)"><svg><use href="#i-health"/></svg></span><div class="cb"><div class="ct">幼兒健康及發展綜合計劃</div></div><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
+      <div class="cl" @click="openSub('g6')"><span class="ci" style="color:var(--red)"><svg><use href="#i-warn"/></svg></span><div class="cb"><div class="ct">蠶豆病須知</div></div><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
+    </div>
+    <div class="st">資料</div>
+    <div class="cs">
+      <div class="cl" @click="openSub('st')"><span class="ci" style="color:var(--teal)"><svg><use href="#i-barchart"/></svg></span><div class="cb"><div class="ct">統計報告</div></div><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
+      <div class="cl" @click="openSub('ex')"><span class="ci"><svg><use href="#i-pdf"/></svg></span><div class="cb"><div class="ct">匯出 PDF 報告</div><div class="cd">每日/每週/每月記錄</div></div><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
+    </div>
+    <div class="st">其他</div>
+    <div class="cs">
+      <div class="cl"><span class="ci"><svg><use href="#i-help"/></svg></span><div class="cb"><div class="ct">幫助中心</div></div><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
+      <div class="cl"><span class="ci"><svg><use href="#i-info"/></svg></span><div class="cb"><div class="ct">關於</div></div><div class="cr"><span class="cf">v1.0.0</span><span class="ca"><svg><use href="#i-arrow"/></svg></span></div></div>
+    </div>
+    <div class="nt nc" style="margin-top:8px">
+      <span class="nn" style="color:var(--blue)"><svg><use href="#i-info"/></svg></span>
+      <div class="nb2">資料儲存於 Cloudflare D1 數據庫，安全可靠。支援 PWA 離線使用。</div>
+    </div>
+  </div>
+
+  <!-- ===== SUB: ADD FEED ===== -->
+  <div class="sub" :class="{active: activeSub === 'af'}">
+    <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">新增餵奶記錄</span><div class="nb-ph"></div></div>
+    <div class="st">餵奶資料</div>
+    <div class="fc">
+      <div class="fi"><span class="fl">類型</span><div class="fr">配方奶</div></div>
+      <div class="fi"><span class="fl">時間</span><input class="fv" type="time" v-model="feedTime"></div>
+      <div class="fi"><span class="fl">奶量(ml)</span><div class="sp"><button @click="adjFeedAmount(-10)">−</button><div class="sv">{{ feedAmount }}</div><button @click="adjFeedAmount(10)">+</button></div></div>
+    </div>
+    <div class="fc" style="margin-top:16px"><div class="fi"><span class="fl">備註</span><input class="fv" type="text" placeholder="例如：有少量嘔奶" v-model="feedNotes"></div></div>
+    <div class="nt nw"><span class="nn" style="color:var(--red)"><svg><use href="#i-warn"/></svg></span><div class="nb2"><strong>蠶豆病提醒</strong>請確認配方奶粉成份不含蠶豆（fava bean）相關成份。轉奶粉前請先諮詢兒科醫生。</div></div>
+    <div class="ba"><a href="javascript:;" class="bp" @click="saveFeed">儲存記錄</a></div>
+  </div>
+
+  <!-- ===== SUB: ADD DIAPER ===== -->
+  <div class="sub" :class="{active: activeSub === 'ad'}">
+    <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">新增換片記錄</span><div class="nb-ph"></div></div>
+    <div class="st">換片資料</div>
+    <div class="fc">
+      <div class="fi"><span class="fl">類型</span><select class="fs" v-model="diaperType"><option value="pee">小便</option><option value="poo">大便</option><option value="both">大便 + 小便</option><option value="dry">乾淨</option></select></div>
+      <div class="fi"><span class="fl">時間</span><input class="fv" type="time" v-model="diaperTime"></div>
+    </div>
+    <div class="fc" style="margin-top:16px" v-if="showPooFields()">
+      <div class="fi"><span class="fl">顏色</span><select class="fs" v-model="diaperColor"><option>黃色（正常）</option><option>綠色</option><option>啡色</option><option>黑色（柏油狀）</option><option>帶血絲</option><option>灰白色</option></select></div>
+      <div class="fi"><span class="fl">質地</span><select class="fs" v-model="diaperConsistency"><option>稀軟</option><option>糊狀</option><option>成形</option><option>水狀</option><option>硬</option></select></div>
+      <div class="fi"><span class="fl">份量</span><select class="fs" v-model="diaperAmount"><option>少量</option><option>中量</option><option>大量</option></select></div>
+    </div>
+    <div class="fc" style="margin-top:16px"><div class="fi"><span class="fl">備註</span><input class="fv" type="text" placeholder="例如：有紅疹" v-model="diaperNotes"></div></div>
+    <div class="nt ni"><span class="nn" style="color:var(--warn)"><svg><use href="#i-alert"/></svg></span><div class="nb2"><strong>大便顏色提示</strong>灰白色或帶血絲大便可能需要即時就醫。如有異常，請保留尿片並盡快諮詢醫生。</div></div>
+    <div class="ba"><a href="javascript:;" class="bp" @click="saveDiaper">儲存記錄</a></div>
+  </div>
+
+  <!-- ===== SUB: ADD SLEEP ===== -->
+  <div class="sub" :class="{active: activeSub === 'as'}">
+    <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">新增睡眠記錄</span><div class="nb-ph"></div></div>
+    <div class="st">手動輸入睡眠</div>
+    <div class="fc">
+      <div class="fi"><span class="fl">入睡時間</span><input class="fv" type="time" v-model="manualSleepStart"></div>
+      <div class="fi"><span class="fl">醒來時間</span><input class="fv" type="time" v-model="manualSleepEnd"></div>
+    </div>
+    <div class="fc" style="margin-top:16px">
+      <div class="fi"><span class="fl">睡眠質素</span><select class="fs" v-model="sleepQuality"><option>好 · 瞓得穩</option><option>一般 · 有扎醒</option><option>差 · 成日喊</option></select></div>
+      <div class="fi"><span class="fl">備註</span><input class="fv" type="text" placeholder="例如：半夜扎醒一次" v-model="sleepNotes"></div>
+    </div>
+    <div class="nt np"><span class="nn" style="color:var(--purple)"><svg><use href="#i-moon"/></svg></span><div class="nb2"><strong>睡眠小貼士</strong>新生兒約需 16-17 小時睡眠。可以用「睡眠」tab 嘅大按鈕快速記錄入睡/醒來時間。</div></div>
+    <div class="ba"><a href="javascript:;" class="bp" @click="saveManualSleep">儲存記錄</a></div>
+  </div>
+
+  <!-- ===== SUB: PROFILE ===== -->
+  <div class="sub" :class="{active: activeSub === 'pf'}">
+    <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">{{ babyName }}基本資料</span><div class="nb-ph"></div></div>
+    <div style="display:flex;flex-direction:column;align-items:center;padding:24px 16px 8px">
+      <div class="av" style="width:80px;height:80px;background:rgba(0,0,0,0.06);color:var(--t3);cursor:pointer;border-radius:50%;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative">
+        <svg style="width:36px;height:36px"><use href="#i-baby"/></svg>
+      </div>
+      <span style="font-size:13px;color:var(--t2);margin-top:8px">點擊更換頭像</span>
+    </div>
+    <div class="st">個人資料</div>
+    <div class="fc">
+      <div class="fi"><span class="fl">姓名</span><input class="fv" type="text" v-model="profileForm.name"></div>
+      <div class="fi"><span class="fl">性別</span><select class="fs" v-model="profileForm.gender"><option>男</option><option>女</option></select></div>
+      <div class="fi"><span class="fl">出生日期</span><input class="fv" type="date" v-model="profileForm.birthday"></div>
+      <div class="fi"><span class="fl">出生體重</span><input class="fv" type="text" v-model="profileForm.birth_weight" placeholder="例如：3.1 kg"></div>
+      <div class="fi"><span class="fl">出生身高</span><input class="fv" type="text" v-model="profileForm.birth_height" placeholder="例如：50 cm"></div>
+    </div>
+    <div class="ba"><a href="javascript:;" class="bp" @click="saveProfile">儲存資料</a></div>
+  </div>
+
+  <!-- ===== SUB: G6PD ===== -->
+  <div class="sub" :class="{active: activeSub === 'g6'}">
+    <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">蠶豆病 (G6PD缺乏症)</span><div class="nb-ph"></div></div>
+    <div class="nt nw"><span class="nn" style="color:var(--red)"><svg><use href="#i-warn"/></svg></span><div class="nb2"><strong>需特別注意</strong>確診途徑：出生時新生兒篩查</div></div>
+    <div class="st">禁用藥物及物品</div>
+    <div class="cs">
+      <div class="cl"><span class="ci" style="color:var(--red)"><svg><use href="#i-x"/></svg></span><div class="cb"><div class="ct">臭丸（萘丸 / 樟腦丸）</div></div></div>
+      <div class="cl"><span class="ci" style="color:var(--red)"><svg><use href="#i-x"/></svg></span><div class="cb"><div class="ct">蠶豆及蠶豆製品</div></div></div>
+      <div class="cl"><span class="ci" style="color:var(--red)"><svg><use href="#i-x"/></svg></span><div class="cb"><div class="ct">阿士匹靈 (Aspirin)</div><div class="cd">非處方藥中可能含有</div></div></div>
+      <div class="cl"><span class="ci" style="color:var(--red)"><svg><use href="#i-x"/></svg></span><div class="cb"><div class="ct">磺胺類藥物 (Sulfonamides)</div></div></div>
+      <div class="cl"><span class="ci" style="color:var(--red)"><svg><use href="#i-x"/></svg></span><div class="cb"><div class="ct">呋喃類藥物 (Nitrofurantoin)</div></div></div>
+      <div class="cl"><span class="ci" style="color:var(--red)"><svg><use href="#i-x"/></svg></span><div class="cb"><div class="ct">甲基藍 (Methylene Blue)</div></div></div>
+      <div class="cl"><span class="ci" style="color:var(--red)"><svg><use href="#i-x"/></svg></span><div class="cb"><div class="ct">含薄荷成份產品</div><div class="cd">如白花油、風油精等</div></div></div>
+    </div>
+    <div class="st">安全提示</div>
+    <div class="cs">
+      <div class="cl"><span class="ci" style="color:var(--green)"><svg><use href="#i-check"/></svg></span><div class="cb"><div class="ct">撲熱息痛 (Paracetamol) 一般安全</div></div></div>
+      <div class="cl"><span class="ci" style="color:var(--green)"><svg><use href="#i-check"/></svg></span><div class="cb"><div class="ct">就診時務必告知醫生</div></div></div>
+      <div class="cl"><span class="ci" style="color:var(--green)"><svg><use href="#i-check"/></svg></span><div class="cb"><div class="ct">留意皮膚及眼白變黃</div></div></div>
+      <div class="cl"><span class="ci" style="color:var(--green)"><svg><use href="#i-check"/></svg></span><div class="cb"><div class="ct">急性溶血需立即就醫</div></div></div>
+    </div>
+  </div>
+
+  <!-- ===== SUB: VACCINE ===== -->
+  <div class="sub" :class="{active: activeSub === 'he'}">
+    <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">疫苗接種計劃</span><div class="nb-ph"></div></div>
+    <div class="nt nc"><span class="nn" style="color:var(--blue)"><svg><use href="#i-info"/></svg></span><div class="nb2">根據衞生署「香港兒童免疫接種計劃」。<br>來源：<span style="color:var(--blue)">fhs.gov.hk</span></div></div>
+    <div class="st">初生</div>
+    <div class="cs">
+      <div class="cl"><span class="ci" style="color:var(--green)"><svg><use href="#i-check"/></svg></span><div class="cb"><div class="ct">卡介苗 (BCG)</div><div class="cd">已接種 · 2025年1月26日</div></div><div class="cr row"><span class="tg tg-g">已完成</span></div></div>
+      <div class="cl"><span class="ci" style="color:var(--green)"><svg><use href="#i-check"/></svg></span><div class="cb"><div class="ct">乙型肝炎疫苗 — 第一次</div><div class="cd">已接種 · 2025年1月26日</div></div><div class="cr row"><span class="tg tg-g">已完成</span></div></div>
+    </div>
+    <div class="st">一個月</div>
+    <div class="cs"><div class="cl"><span class="ci" style="color:var(--warn)"><svg><use href="#i-shield"/></svg></span><div class="cb"><div class="ct">乙型肝炎疫苗 — 第二次</div><div class="cd">建議：2025年2月25日</div></div><div class="cr row"><span class="tg tg-o">待接種</span></div></div></div>
+    <div class="st">兩個月</div>
+    <div class="cs">
+      <div class="cl"><span class="ci" style="color:var(--t3)"><svg><use href="#i-shield"/></svg></span><div class="cb"><div class="ct">白喉、破傷風、無細胞型百日咳及滅活小兒麻痺混合疫苗 — 第一次</div><div class="cd">建議：2025年3月25日</div></div></div>
+      <div class="cl"><span class="ci" style="color:var(--t3)"><svg><use href="#i-shield"/></svg></span><div class="cb"><div class="ct">肺炎球菌疫苗 — 第一次</div><div class="cd">建議：2025年3月25日</div></div></div>
+    </div>
+    <div class="st">四個月</div>
+    <div class="cs">
+      <div class="cl"><span class="ci" style="color:var(--t3)"><svg><use href="#i-shield"/></svg></span><div class="cb"><div class="ct">四合一混合疫苗 — 第二次</div><div class="cd">建議：2025年5月25日</div></div></div>
+      <div class="cl"><span class="ci" style="color:var(--t3)"><svg><use href="#i-shield"/></svg></span><div class="cb"><div class="ct">肺炎球菌疫苗 — 第二次</div><div class="cd">建議：2025年5月25日</div></div></div>
+    </div>
+    <div class="st">六個月</div>
+    <div class="cs">
+      <div class="cl"><span class="ci" style="color:var(--t3)"><svg><use href="#i-shield"/></svg></span><div class="cb"><div class="ct">四合一混合疫苗 — 第三次</div><div class="cd">建議：2025年7月25日</div></div></div>
+      <div class="cl"><span class="ci" style="color:var(--t3)"><svg><use href="#i-shield"/></svg></span><div class="cb"><div class="ct">乙型肝炎疫苗 — 第三次</div><div class="cd">建議：2025年7月25日</div></div></div>
+    </div>
+    <div class="nt ni"><span class="nn" style="color:var(--warn)"><svg><use href="#i-warn"/></svg></span><div class="nb2"><strong>蠶豆病提醒</strong>接種後如需退燒藥，切勿用阿士匹靈，可用撲熱息痛。發高燒 (40°C+) 請即就醫。</div></div>
+    <div style="height:32px"></div>
+  </div>
+
+  <!-- ===== SUB: HEALTH SCHEDULE ===== -->
+  <div class="sub" :class="{active: activeSub === 'hs'}">
+    <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">幼兒健康及發展綜合計劃</span><div class="nb-ph"></div></div>
+    <div class="nt nc"><span class="nn" style="color:var(--blue)"><svg><use href="#i-info"/></svg></span><div class="nb2"><strong>衞生署家庭健康服務</strong>24小時資訊熱線 2112 9900</div></div>
+    <div class="st">生長監察及飲食評估</div>
+    <div class="cs">
+      <div class="cl"><span class="ci" style="color:var(--green)"><svg><use href="#i-check"/></svg></span><div class="cb"><div class="ct">初生</div></div><div class="cr row"><span class="tg tg-g">已完成</span></div></div>
+      <div class="cl"><span class="ci" style="color:var(--warn)"><svg><use href="#i-chart"/></svg></span><div class="cb"><div class="ct">一個月</div></div><div class="cr row"><span class="tg tg-o">下次</span></div></div>
+      <div class="cl"><span class="ci" style="color:var(--t3)"><svg><use href="#i-chart"/></svg></span><div class="cb"><div class="ct">兩個月 · 四個月 · 六個月</div></div></div>
+      <div class="cl"><span class="ci" style="color:var(--t3)"><svg><use href="#i-chart"/></svg></span><div class="cb"><div class="ct">一歲 · 一歲半 · 四歲</div></div></div>
+    </div>
+    <div class="st">發展監察</div>
+    <div class="cs">
+      <div class="cl"><span class="ci" style="color:var(--t3)"><svg><use href="#i-user"/></svg></span><div class="cb"><div class="ct">六個月 · 一歲 · 一歲半</div></div></div>
+    </div>
+    <div class="st">聽力及視力普查</div>
+    <div class="cs">
+      <div class="cl"><span class="ci" style="color:var(--warn)"><svg><use href="#i-alert"/></svg></span><div class="cb"><div class="ct">聽力普查（耳聲發射）</div><div class="cd">四個月以下嬰兒</div></div><div class="cr row"><span class="tg tg-o">待安排</span></div></div>
+      <div class="cl"><span class="ci" style="color:var(--t3)"><svg><use href="#i-alert"/></svg></span><div class="cb"><div class="ct">學前視力普查</div><div class="cd">四歲或以上</div></div></div>
+    </div>
+    <div style="height:32px"></div>
+  </div>
+
+  <!-- ===== SUB: REMINDERS ===== -->
+  <div class="sub" :class="{active: activeSub === 'rm'}">
+    <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">提醒及推送通知</span><div class="nb-ph"></div></div>
+    <div class="nt nc">
+      <span class="nn" style="color:var(--blue)"><svg><use href="#i-bell"/></svg></span>
+      <div class="nb2"><strong>推送通知</strong>開啟推送通知以接收餵奶、換片及疫苗提醒。需要授權瀏覽器通知權限。</div>
+    </div>
+    <div class="st">餵奶提醒</div>
+    <div class="rm-card">
+      <div class="rm-ico" style="background:#E8F4FD;color:var(--blue)"><svg><use href="#i-milk"/></svg></div>
+      <div class="rm-body"><div class="rm-title">餵奶間隔提醒</div><div class="rm-desc">距上次餵奶 3 小時後提醒</div></div>
+      <label class="tog"><input type="checkbox" checked><span class="tsl"></span></label>
+    </div>
+    <div class="fc">
+      <div class="fi"><span class="fl">間隔時間</span><select class="fs"><option>2 小時</option><option>2.5 小時</option><option selected>3 小時</option><option>3.5 小時</option><option>4 小時</option></select></div>
+    </div>
+    <div class="st">換片提醒</div>
+    <div class="rm-card">
+      <div class="rm-ico" style="background:#FFF3E0;color:#E67E22"><svg><use href="#i-diaper"/></svg></div>
+      <div class="rm-body"><div class="rm-title">換片提醒</div><div class="rm-desc">定時提醒檢查尿片</div></div>
+      <label class="tog"><input type="checkbox"><span class="tsl"></span></label>
+    </div>
+    <div class="st">疫苗提醒</div>
+    <div class="rm-card">
+      <div class="rm-ico" style="background:#E8F5E9;color:var(--green)"><svg><use href="#i-shield"/></svg></div>
+      <div class="rm-body"><div class="rm-title">疫苗到期提醒</div><div class="rm-desc">接種日前 7 天推送提醒</div></div>
+      <label class="tog"><input type="checkbox" checked><span class="tsl"></span></label>
+    </div>
+    <div class="st">睡眠提醒</div>
+    <div class="rm-card">
+      <div class="rm-ico" style="background:#F3E8FF;color:var(--purple)"><svg><use href="#i-moon"/></svg></div>
+      <div class="rm-body"><div class="rm-title">清醒時間提醒</div><div class="rm-desc">清醒超過建議時間提醒哄睡</div></div>
+      <label class="tog"><input type="checkbox"><span class="tsl"></span></label>
+    </div>
+  </div>
+
+  <!-- ===== SUB: STATISTICS ===== -->
+  <div class="sub" :class="{active: activeSub === 'st'}">
+    <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">統計報告</span><div class="nb-ph"></div></div>
+    <div class="dual-row" style="margin-top:16px">
+      <div class="dual-card"><div class="dv" style="color:var(--blue)">{{ feedSummary.avg }}<span style="font-size:14px;font-weight:400">ml</span></div><div class="dl">每餐平均</div></div>
+      <div class="dual-card"><div class="dv" style="color:var(--green)">{{ feedSummary.total }}<span style="font-size:14px;font-weight:400">ml</span></div><div class="dl">今日總奶量</div></div>
+    </div>
+    <div class="dual-row">
+      <div class="dual-card"><div class="dv" style="color:var(--orange)">{{ diaperSummary.wet }}<span style="font-size:14px;font-weight:400">次</span></div><div class="dl">今日小便</div></div>
+      <div class="dual-card"><div class="dv" style="color:#E67E22">{{ diaperSummary.dirty }}<span style="font-size:14px;font-weight:400">次</span></div><div class="dl">今日大便</div></div>
+    </div>
+    <div class="dual-row">
+      <div class="dual-card"><div class="dv" style="color:var(--purple)">{{ sleepSummaryData.totalHours }}<span style="font-size:14px;font-weight:400">h</span></div><div class="dl">今日睡眠</div></div>
+      <div class="dual-card"><div class="dv" style="color:var(--purple)">{{ sleepSummaryData.longestHours }}<span style="font-size:14px;font-weight:400">h</span></div><div class="dl">最長連續</div></div>
+    </div>
+    <div style="height:32px"></div>
+  </div>
+
+  <!-- ===== SUB: EXPORT ===== -->
+  <div class="sub" :class="{active: activeSub === 'ex'}">
+    <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">匯出 PDF 報告</span><div class="nb-ph"></div></div>
+    <div class="st">選擇報告範圍</div>
+    <div class="fc">
+      <div class="fi"><span class="fl">報告類型</span><select class="fs"><option>每日報告</option><option selected>每週報告</option><option>每月報告</option></select></div>
+      <div class="fi"><span class="fl">開始日期</span><input class="fv" type="date"></div>
+      <div class="fi"><span class="fl">結束日期</span><input class="fv" type="date"></div>
+    </div>
+    <div class="st">報告內容</div>
+    <div class="fc">
+      <div class="fi"><span class="fl">飲奶記錄</span><label class="tog"><input type="checkbox" checked><span class="tsl"></span></label></div>
+      <div class="fi"><span class="fl">換片記錄</span><label class="tog"><input type="checkbox" checked><span class="tsl"></span></label></div>
+      <div class="fi"><span class="fl">睡眠記錄</span><label class="tog"><input type="checkbox" checked><span class="tsl"></span></label></div>
+      <div class="fi"><span class="fl">成長數據</span><label class="tog"><input type="checkbox" checked><span class="tsl"></span></label></div>
+    </div>
+    <div class="btn-row"><a href="javascript:;" class="bp bp-blue" @click="showToast('PDF 已生成')">生成 PDF</a></div>
+    <div style="padding:0 16px"><a href="javascript:;" class="bp-outline" @click="showToast('已分享')">分享給醫生</a></div>
+  </div>
+
+  <!-- ===== TAB BAR ===== -->
+  <div class="tb">
+    <div class="ti" :class="{active: currentPage === 0}" @click="go(0)"><svg><use href="#i-home"/></svg><span>主頁</span></div>
+    <div class="ti" :class="{active: currentPage === 1}" @click="go(1)"><svg><use href="#i-bottle"/></svg><span>飲奶</span></div>
+    <div class="ti" :class="{active: currentPage === 2}" @click="go(2)"><svg><use href="#i-diaper"/></svg><span>換片</span></div>
+    <div class="ti" :class="{active: currentPage === 3}" @click="go(3)"><svg><use href="#i-moon"/></svg><span>睡眠</span></div>
+    <div class="ti" :class="{active: currentPage === 4}" @click="go(4)"><svg><use href="#i-gear"/></svg><span>設定</span></div>
+  </div>
+  `,
 });
 
-/* ============================================================
- * APP INIT
- * ============================================================ */
-const app = Vue.createApp({
-  setup() {
-    const activeTab = ref(0);
-    return { activeTab };
-  },
-});
-
-app.use(router);
-app.use(vant);
 app.mount('#app');
 
 /* ============================================================
