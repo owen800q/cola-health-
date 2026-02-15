@@ -40,7 +40,7 @@ body::after { content: ''; position: fixed; bottom: 0; left: 0; right: 0; height
 .sl { font-size: 10px; color: var(--t2); display: block; margin-top: 2px; }
 
 /* Grid */
-.gd { display: flex; flex-wrap: wrap; background: var(--card); margin: 16px; border-radius: 8px; }
+.gd { display: flex; flex-wrap: wrap; background: var(--card); margin: 16px 0; border-radius: 0; }
 .gi { flex: 0 0 25%; display: flex; flex-direction: column; align-items: center; padding: 14px 4px; cursor: pointer; min-height: 68px; }
 .gi:active { opacity: 0.6; }
 .gi .gi-ico { margin-bottom: 6px; }
@@ -51,7 +51,7 @@ body::after { content: ''; position: fixed; bottom: 0; left: 0; right: 0; height
 .st { padding: 14px 16px 6px; font-size: 14px; color: var(--t2); }
 
 /* Cells */
-.cs { margin: 0 16px 16px; border-radius: 8px; overflow: hidden; }
+.cs { margin: 0 0 16px; border-radius: 0; overflow: hidden; }
 .cl { display: flex; align-items: center; padding: 13px 16px; background: var(--card); border-bottom: 1px solid var(--t5); text-decoration: none; color: inherit; cursor: pointer; }
 .cl:last-child { border-bottom: none; }
 .cl:active { background: #ececec; }
@@ -95,7 +95,7 @@ body::after { content: ''; position: fixed; bottom: 0; left: 0; right: 0; height
 .sbl { font-size: 11px; color: var(--t2); }
 
 /* Form */
-.fc { margin: 0 16px; border-radius: 8px; overflow: hidden; }
+.fc { margin: 0; border-radius: 0; overflow: hidden; }
 .fc + .fc { margin-top: 16px; }
 .fi { display: flex; align-items: center; padding: 12px 16px; background: var(--card); border-bottom: 1px solid var(--t5); min-height: 48px; cursor: pointer; }
 label.fi { cursor: pointer; }

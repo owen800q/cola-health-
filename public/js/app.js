@@ -176,6 +176,10 @@ const app = createApp({
             const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
             avatarUrl.value = dataUrl;
             localStorage.setItem('babyAvatar', dataUrl);
+            // Sync avatar to cloud
+            API.uploadAvatar({ avatar_url: dataUrl }).catch(function (e) {
+              console.warn('Failed to sync avatar to cloud:', e);
+            });
             showToast('頭像已更換');
           };
           img.src = ev.target.result;
@@ -552,6 +556,11 @@ const app = createApp({
     // ===== LIFECYCLE =====
     onMounted(async () => {
       await loadBaby();
+      // Load avatar from cloud if not cached locally
+      if (!avatarUrl.value && store.baby && store.baby.avatar_url) {
+        avatarUrl.value = store.baby.avatar_url;
+        localStorage.setItem('babyAvatar', store.baby.avatar_url);
+      }
       loadProfile();
       initTimes();
       loadHomeData();
