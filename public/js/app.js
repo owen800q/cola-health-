@@ -342,13 +342,13 @@ const app = createApp({
     }
 
     async function loadFeedHistory() {
-      try { feedHistory.value = await API.getFeeds(store.babyId, localDayRange()) || []; } catch (e) { console.warn(e); }
+      try { feedHistory.value = await API.getFeeds(store.babyId, viewDayRange()) || []; } catch (e) { console.warn(e); }
     }
     async function loadDiaperHistory() {
-      try { diaperHistory.value = await API.getDiapers(store.babyId, localDayRange()) || []; } catch (e) { console.warn(e); }
+      try { diaperHistory.value = await API.getDiapers(store.babyId, viewDayRange()) || []; } catch (e) { console.warn(e); }
     }
     async function loadSleepHistory() {
-      try { sleepHistory.value = await API.getSleeps(store.babyId, localDayRange()) || []; } catch (e) { console.warn(e); }
+      try { sleepHistory.value = await API.getSleeps(store.babyId, viewDayRange()) || []; } catch (e) { console.warn(e); }
     }
 
     // ===== FEED ACTIONS =====
@@ -545,7 +545,40 @@ const app = createApp({
     }
 
     // Date nav
-    const dateStr = computed(() => fmtDateCN(new Date().toISOString()));
+    const viewDate = ref(new Date());
+    const viewDateStr = computed(() => fmtDateCN(viewDate.value.toISOString()));
+    const isToday = computed(() => {
+      const v = viewDate.value;
+      const n = new Date();
+      return v.getFullYear() === n.getFullYear() && v.getMonth() === n.getMonth() && v.getDate() === n.getDate();
+    });
+
+    function viewDayRange() {
+      const dayStart = new Date(viewDate.value); dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(viewDate.value); dayEnd.setHours(23, 59, 59, 999);
+      return { from: dayStart.toISOString(), to: dayEnd.toISOString() };
+    }
+
+    function prevDay() {
+      const d = new Date(viewDate.value);
+      d.setDate(d.getDate() - 1);
+      viewDate.value = d;
+      reloadViewPage();
+    }
+
+    function nextDay() {
+      const d = new Date(viewDate.value);
+      d.setDate(d.getDate() + 1);
+      viewDate.value = d;
+      reloadViewPage();
+    }
+
+    function reloadViewPage() {
+      const p = currentPage.value;
+      if (p === 1) loadFeedHistory();
+      else if (p === 2) loadDiaperHistory();
+      else if (p === 3) loadSleepHistory();
+    }
 
     // Feed summary computed
     const feedSummary = computed(() => {
@@ -783,7 +816,7 @@ const app = createApp({
       // Baby
       baby, babyName, babyAge, babyBirthday, daysSinceBirth, avatarUrl, pickAvatar,
       // Home
-      homeStats, recentItems, dateStr,
+      homeStats, recentItems, viewDateStr, prevDay, nextDay,
       // Feed
       feedHistory, feedAmount, feedType, feedTime, feedNotes,
       adjFeedAmount, saveFeed, deleteFeed, feedSummary, feedItemType,
@@ -867,7 +900,7 @@ const app = createApp({
   <!-- ===== FEEDING ===== -->
   <div class="page" :class="{active: currentPage === 1}">
     <div class="nb"><div class="nb-ph"></div><span class="nb-t">飲奶記錄</span><span class="nb-a" @click="openSub('af'); initTimes()"><svg><use href="#i-plus"/></svg></span></div>
-    <div class="dn"><span class="da"><svg><use href="#i-back"/></svg></span><span class="dt">{{ dateStr }}</span><span class="da"><svg><use href="#i-arrow"/></svg></span></div>
+    <div class="dn"><span class="da" @click="prevDay"><svg><use href="#i-back"/></svg></span><span class="dt">{{ viewDateStr }}</span><span class="da" @click="nextDay"><svg><use href="#i-arrow"/></svg></span></div>
     <div class="sb">
       <div class="sbi"><span class="sbv" style="color:var(--blue)">{{ feedSummary.total }}</span><span class="sbl">總奶量(ml)</span></div>
       <div class="sbi"><span class="sbv" style="color:var(--green)">{{ feedSummary.count }}</span><span class="sbl">餵奶次數</span></div>
@@ -894,7 +927,7 @@ const app = createApp({
   <!-- ===== DIAPER ===== -->
   <div class="page" :class="{active: currentPage === 2}">
     <div class="nb"><div class="nb-ph"></div><span class="nb-t">換片記錄</span><span class="nb-a" @click="openSub('ad'); initTimes()"><svg><use href="#i-plus"/></svg></span></div>
-    <div class="dn"><span class="da"><svg><use href="#i-back"/></svg></span><span class="dt">{{ dateStr }}</span><span class="da"><svg><use href="#i-arrow"/></svg></span></div>
+    <div class="dn"><span class="da" @click="prevDay"><svg><use href="#i-back"/></svg></span><span class="dt">{{ viewDateStr }}</span><span class="da" @click="nextDay"><svg><use href="#i-arrow"/></svg></span></div>
     <div class="sb">
       <div class="sbi"><span class="sbv" style="color:var(--orange)">{{ diaperSummary.wet }}</span><span class="sbl">小便</span></div>
       <div class="sbi"><span class="sbv" style="color:#E67E22">{{ diaperSummary.dirty }}</span><span class="sbl">大便</span></div>
@@ -932,7 +965,7 @@ const app = createApp({
         <span>{{ isSleeping ? '醒咗' : '瞓覺' }}</span>
       </button>
     </div>
-    <div class="dn"><span class="da"><svg><use href="#i-back"/></svg></span><span class="dt">{{ dateStr }}</span><span class="da"><svg><use href="#i-arrow"/></svg></span></div>
+    <div class="dn"><span class="da" @click="prevDay"><svg><use href="#i-back"/></svg></span><span class="dt">{{ viewDateStr }}</span><span class="da" @click="nextDay"><svg><use href="#i-arrow"/></svg></span></div>
     <div class="sb">
       <div class="sbi"><span class="sbv" style="color:var(--purple)">{{ sleepSummaryData.totalHours }}h</span><span class="sbl">今日總睡眠</span></div>
       <div class="sbi"><span class="sbv" style="color:var(--purple)">{{ sleepSummaryData.longestHours }}h</span><span class="sbl">最長連續</span></div>
