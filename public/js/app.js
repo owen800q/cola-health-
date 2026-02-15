@@ -760,7 +760,7 @@ const app = createApp({
     <div class="st">餵奶資料</div>
     <div class="fc">
       <div class="fi"><span class="fl">類型</span><div class="fr">配方奶</div></div>
-      <div class="fi"><span class="fl">時間</span><input class="fv" type="time" v-model="feedTime"></div>
+      <label class="fi"><span class="fl">時間</span><input class="fv" type="time" v-model="feedTime"></label>
       <div class="fi"><span class="fl">奶量(ml)</span><div class="sp"><button @click="adjFeedAmount(-10)">−</button><div class="sv">{{ feedAmount }}</div><button @click="adjFeedAmount(10)">+</button></div></div>
     </div>
     <div class="fc" style="margin-top:16px"><div class="fi"><span class="fl">備註</span><input class="fv" type="text" placeholder="例如：有少量嘔奶" v-model="feedNotes"></div></div>
@@ -773,8 +773,8 @@ const app = createApp({
     <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">新增換片記錄</span><div class="nb-ph"></div></div>
     <div class="st">換片資料</div>
     <div class="fc">
-      <div class="fi"><span class="fl">類型</span><select class="fs" v-model="diaperType"><option value="pee">小便</option><option value="poo">大便</option><option value="both">大便 + 小便</option><option value="dry">乾淨</option></select></div>
-      <div class="fi"><span class="fl">時間</span><input class="fv" type="time" v-model="diaperTime"></div>
+      <label class="fi"><span class="fl">類型</span><select class="fs" v-model="diaperType"><option value="pee">小便</option><option value="poo">大便</option><option value="both">大便 + 小便</option><option value="dry">乾淨</option></select></label>
+      <label class="fi"><span class="fl">時間</span><input class="fv" type="time" v-model="diaperTime"></label>
     </div>
     <div class="fc" style="margin-top:16px" v-if="showPooFields()">
       <div class="fi"><span class="fl">顏色</span><select class="fs" v-model="diaperColor"><option>黃色（正常）</option><option>綠色</option><option>啡色</option><option>黑色（柏油狀）</option><option>帶血絲</option><option>灰白色</option></select></div>
@@ -791,8 +791,8 @@ const app = createApp({
     <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">新增睡眠記錄</span><div class="nb-ph"></div></div>
     <div class="st">手動輸入睡眠</div>
     <div class="fc">
-      <div class="fi"><span class="fl">入睡時間</span><input class="fv" type="time" v-model="manualSleepStart"></div>
-      <div class="fi"><span class="fl">醒來時間</span><input class="fv" type="time" v-model="manualSleepEnd"></div>
+      <label class="fi"><span class="fl">入睡時間</span><input class="fv" type="time" v-model="manualSleepStart"></label>
+      <label class="fi"><span class="fl">醒來時間</span><input class="fv" type="time" v-model="manualSleepEnd"></label>
     </div>
     <div class="fc" style="margin-top:16px">
       <div class="fi"><span class="fl">睡眠質素</span><select class="fs" v-model="sleepQuality"><option>好 · 瞓得穩</option><option>一般 · 有扎醒</option><option>差 · 成日喊</option></select></div>
@@ -814,11 +814,11 @@ const app = createApp({
     </div>
     <div class="st">個人資料</div>
     <div class="fc">
-      <div class="fi"><span class="fl">姓名</span><input class="fv" type="text" v-model="profileForm.name"></div>
-      <div class="fi"><span class="fl">性別</span><select class="fs" v-model="profileForm.gender"><option>男</option><option>女</option></select></div>
-      <div class="fi"><span class="fl">出生日期</span><input class="fv" type="date" v-model="profileForm.birthday"></div>
-      <div class="fi"><span class="fl">出生體重</span><input class="fv" type="text" v-model="profileForm.birth_weight" placeholder="例如：3.1 kg"></div>
-      <div class="fi"><span class="fl">出生身高</span><input class="fv" type="text" v-model="profileForm.birth_height" placeholder="例如：50 cm"></div>
+      <label class="fi"><span class="fl">姓名</span><input class="fv" type="text" v-model="profileForm.name"></label>
+      <label class="fi"><span class="fl">性別</span><select class="fs" v-model="profileForm.gender"><option>男</option><option>女</option></select></label>
+      <label class="fi"><span class="fl">出生日期</span><input class="fv" type="date" v-model="profileForm.birthday"></label>
+      <label class="fi"><span class="fl">出生體重</span><input class="fv" type="text" v-model="profileForm.birth_weight" placeholder="例如：3.1"></label>
+      <label class="fi"><span class="fl">出生身高</span><input class="fv" type="text" v-model="profileForm.birth_height" placeholder="例如：50"></label>
     </div>
     <div class="ba"><a href="javascript:;" class="bp" @click="saveProfile">儲存資料</a></div>
   </div>
