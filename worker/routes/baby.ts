@@ -33,7 +33,7 @@ babyRoutes.put('/', async (c) => {
       doctor_phone = COALESCE(?, doctor_phone),
       updated_at = datetime('now')
     WHERE id = 1
-  `).bind(name, gender, birth_date, birth_weight, birth_height, blood_type, has_g6pd, hospital, doctor_name, doctor_phone).run();
+  `).bind(name ?? null, gender ?? null, birth_date ?? null, birth_weight ?? null, birth_height ?? null, blood_type ?? null, has_g6pd ?? null, hospital ?? null, doctor_name ?? null, doctor_phone ?? null).run();
 
   // Recalculate vaccine scheduled dates if birth_date changed
   if (birth_date) {
