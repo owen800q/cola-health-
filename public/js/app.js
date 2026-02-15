@@ -127,7 +127,7 @@ const app = createApp({
 
     // Feed page
     const feedHistory = ref([]);
-    const feedAmount = ref(60);
+    const feedAmount = ref(parseInt(localStorage.getItem('lastFeedAmount')) || 60);
     const feedType = ref('formula');
     const feedTime = ref('');
     const feedNotes = ref('');
@@ -297,6 +297,7 @@ const app = createApp({
           note: feedNotes.value || null,
         });
         showToast('餵奶記錄已儲存');
+        localStorage.setItem('lastFeedAmount', feedAmount.value);
         feedNotes.value = '';
         closeSub();
         loadFeedHistory();
