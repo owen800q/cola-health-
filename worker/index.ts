@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { serveStatic } from 'hono/cloudflare-workers';
+import manifest from '__STATIC_CONTENT_MANIFEST';
 import { babyRoutes } from './routes/baby';
 import { feedRoutes } from './routes/feed';
 import { diaperRoutes } from './routes/diaper';
@@ -42,8 +43,8 @@ app.route('/api/push', pushRoutes);
 app.route('/api/timeline', timelineRoutes);
 
 // Serve static files from Workers Sites KV
-app.get('*', serveStatic({ root: './' }));
+app.get('*', serveStatic({ root: './', manifest }));
 // SPA fallback - serve index.html for unmatched routes
-app.get('*', serveStatic({ path: './index.html' }));
+app.get('*', serveStatic({ path: './index.html', manifest }));
 
 export default app;
