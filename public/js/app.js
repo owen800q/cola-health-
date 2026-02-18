@@ -1033,7 +1033,7 @@ const app = createApp({
       <div class="cl" v-for="item in recentItems" :key="item.id + item.type" @click="editTimelineItem(item)">
         <div class="ri" :class="item.cls"><svg><use :href="'#' + item.icon"/></svg></div>
         <div class="cb"><div class="ct">{{ item.title }}</div><div class="cd" v-if="item.detail">{{ item.detail }}</div></div>
-        <div class="cr"><div class="cv" v-if="item.vol">{{ item.vol }}</div><div class="cm">{{ item.time }}</div><div class="cm" style="color:var(--blue)">編輯</div></div>
+        <div class="cr"><div class="cv" v-if="item.vol">{{ item.vol }}</div><div class="cm">{{ item.time }}</div></div>
       </div>
     </div>
     <div class="empty-state" v-else><svg><use href="#i-clock"/></svg><p>今日暫無記錄</p></div>
@@ -1057,7 +1057,7 @@ const app = createApp({
               <div class="ct">{{ feedItemType(item) }}</div>
               <div class="cd">{{ fmtTime(item.time) }}<template v-if="item.note"> · {{ item.note }}</template></div>
             </div>
-            <div class="cr"><div class="cv" v-if="item.amount_ml">{{ item.amount_ml }}ml</div><div class="cm" style="color:var(--blue)">編輯</div></div>
+            <div class="cr"><div class="cv" v-if="item.amount_ml">{{ item.amount_ml }}ml</div></div>
           </div>
         </div>
         <div class="sw-del" @click="deleteFeed(item.id)">刪除</div>
@@ -1084,7 +1084,7 @@ const app = createApp({
               <div class="ct">{{ diaperItemLabel(item) }}</div>
               <div class="cd" v-if="diaperItemDetail(item)">{{ diaperItemDetail(item) }}</div>
             </div>
-            <div class="cr"><div class="cm">{{ fmtTime(item.time) }}</div><div class="cm" style="color:var(--blue)">編輯</div></div>
+            <div class="cr"><div class="cm">{{ fmtTime(item.time) }}</div></div>
           </div>
         </div>
         <div class="sw-del" @click="deleteDiaper(item.id)">刪除</div>
@@ -1123,7 +1123,7 @@ const app = createApp({
               <div class="ct">{{ item.end_time ? '醒咗' : '瞓著咗' }}</div>
               <div class="cd" v-if="item.start_time && item.end_time">瞓咗 {{ fmtDurCN(Math.floor((new Date(item.end_time) - new Date(item.start_time)) / 1000)) }}</div>
             </div>
-            <div class="cr"><div class="cm">{{ fmtTime(item.end_time || item.start_time) }}</div><div class="cm" style="color:var(--blue)">編輯</div></div>
+            <div class="cr"><div class="cm">{{ fmtTime(item.end_time || item.start_time) }}</div></div>
           </div>
         </div>
         <div class="sw-del" @click="deleteSleep(item.id)">刪除</div>
