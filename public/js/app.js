@@ -809,19 +809,33 @@ const app = createApp({
     }
 
     // ===== SWIPE BACK GESTURE =====
-    let sbX0 = 0, sbY0 = 0, sbActive = false, sbEl = null;
+    let sbX0 = 0, sbY0 = 0, sbState = 'idle', sbEl = null;
+    // sbState: 'idle' | 'pending' | 'swiping'
     function subSwipeStart(e) {
       const t = e.touches[0];
       sbX0 = t.clientX;
       sbY0 = t.clientY;
-      sbActive = t.clientX < 40; // only trigger from left edge
       sbEl = e.currentTarget;
+      // Start from left 1/3 of screen
+      sbState = t.clientX < window.innerWidth / 3 ? 'pending' : 'idle';
     }
     function subSwipeMove(e) {
-      if (!sbActive || !sbEl) return;
-      const dx = e.touches[0].clientX - sbX0;
-      const dy = Math.abs(e.touches[0].clientY - sbY0);
-      if (dy > 30) { sbActive = false; sbEl.style.transform = ''; return; }
+      if (sbState === 'idle' || !sbEl) return;
+      const t = e.touches[0];
+      const dx = t.clientX - sbX0;
+      const dy = Math.abs(t.clientY - sbY0);
+      if (sbState === 'pending') {
+        // Decide: horizontal or vertical?
+        if (dx > 8 && dx > dy * 1.2) {
+          sbState = 'swiping';
+        } else if (dy > 8) {
+          sbState = 'idle';
+          return;
+        } else {
+          return; // not enough movement yet
+        }
+      }
+      // sbState === 'swiping'
       if (dx > 0) {
         e.preventDefault();
         sbEl.style.transition = 'none';
@@ -829,9 +843,10 @@ const app = createApp({
       }
     }
     function subSwipeEnd(e) {
-      if (!sbActive || !sbEl) return;
+      if (sbState !== 'swiping' || !sbEl) { sbState = 'idle'; return; }
       const dx = e.changedTouches[0].clientX - sbX0;
-      if (dx > 100) {
+      const vw = window.innerWidth;
+      if (dx > vw * 0.2) {
         sbEl.style.transition = 'transform 0.2s ease';
         sbEl.style.transform = 'translateX(100%)';
         setTimeout(() => {
@@ -843,7 +858,7 @@ const app = createApp({
         sbEl.style.transform = '';
         setTimeout(() => { if (sbEl) sbEl.style.transition = ''; }, 200);
       }
-      sbActive = false;
+      sbState = 'idle';
     }
 
     // ===== REMINDERS =====
