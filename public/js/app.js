@@ -93,6 +93,21 @@ function showToast(msg) {
   setTimeout(function () { if (d.parentNode) document.body.removeChild(d); }, 1500);
 }
 
+let _loadingEl = null;
+function showLoading(msg) {
+  hideLoading();
+  const d = document.createElement('div');
+  d.innerHTML = '<div class="toast"><div class="spinner" style="width:36px;height:36px;margin:0 auto 10px;border:3px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin 0.8s linear infinite;"></div><span class="tm">' + (msg || '處理中...') + '</span></div>';
+  document.body.appendChild(d);
+  _loadingEl = d;
+}
+function hideLoading() {
+  if (_loadingEl && _loadingEl.parentNode) {
+    _loadingEl.parentNode.removeChild(_loadingEl);
+  }
+  _loadingEl = null;
+}
+
 /* ---------- Push helpers ---------- */
 function urlBase64ToUint8Array(base64String) {
   const padding = '='.repeat((4 - base64String.length % 4) % 4);
@@ -124,6 +139,13 @@ const app = createApp({
       sleepHours: 0, sleepCount: 0, sleepLongest: 0,
     });
     const recentItems = ref([]);
+
+    // Global saving lock
+    const saving = ref(false);
+
+    // Edit state
+    const editingId = ref(null);
+    const editingType = ref(null); // 'feed', 'diaper', 'sleep'
 
     // Feed page
     const feedHistory = ref([]);
@@ -280,8 +302,19 @@ const app = createApp({
 
     // Navigation
     function go(i) { currentPage.value = i; }
-    function openSub(name) { activeSub.value = name; if (name === 'he') loadVaccines(); }
-    function closeSub() { activeSub.value = null; }
+    function openSub(name) {
+      // Reset editing state if NOT triggered by editFeed/editDiaper/editSleep
+      if (!editingId.value) {
+        editingType.value = null;
+      }
+      activeSub.value = name;
+      if (name === 'he') loadVaccines();
+    }
+    function closeSub() {
+      activeSub.value = null;
+      editingId.value = null;
+      editingType.value = null;
+    }
 
     // ===== DATA LOADING =====
     async function loadHomeData() {
@@ -330,7 +363,7 @@ const app = createApp({
               detail = dur > 60 ? '瞓咗 ' + fmtDurCN(dur) : '';
             } else { icon = 'i-moon'; cls = 'slp'; title = '瞓著咗'; }
           }
-          return { id: e.id, type: e.record_type, icon, cls, title, detail, vol, time: fmtTime(e.time) };
+          return { id: e.id, type: e.record_type, icon, cls, title, detail, vol, time: fmtTime(e.time), raw: e };
         });
       } catch (e) { console.warn('Home load error:', e); }
     }
@@ -358,35 +391,68 @@ const app = createApp({
 
     async function saveFeed() {
       if (feedAmount.value <= 0) return showToast('請輸入奶量');
+      if (saving.value) return;
+      saving.value = true;
+      showLoading('儲存中...');
       try {
         const now = new Date();
         if (feedTime.value) {
           const [h, m] = feedTime.value.split(':');
           now.setHours(parseInt(h), parseInt(m), 0, 0);
         }
-        await API.createFeed({
+        const data = {
           time: now.toISOString(),
           amount_ml: feedAmount.value,
           note: feedNotes.value || null,
-        });
-        showToast('餵奶記錄已儲存');
+        };
+        if (editingId.value && editingType.value === 'feed') {
+          await API.updateFeed(editingId.value, data);
+        } else {
+          await API.createFeed(data);
+        }
+        hideLoading();
+        showToast(editingId.value ? '記錄已更新' : '餵奶記錄已儲存');
         localStorage.setItem('lastFeedAmount', feedAmount.value);
         feedNotes.value = '';
+        editingId.value = null;
+        editingType.value = null;
         closeSub();
         loadFeedHistory();
         loadHomeData();
-      } catch (e) { showToast('儲存失敗'); }
+      } catch (e) { hideLoading(); showToast('儲存失敗'); }
+      finally { saving.value = false; }
     }
 
     async function deleteFeed(id) {
       const ok = await confirmDialog('確認刪除', '刪除後無法恢復');
       if (!ok) return;
+      if (saving.value) return;
+      saving.value = true;
+      showLoading('刪除中...');
       try {
         await API.deleteFeed(id);
+        hideLoading();
         showToast('已刪除');
         loadFeedHistory();
         loadHomeData();
-      } catch (e) { showToast('刪除失敗'); }
+      } catch (e) { hideLoading(); showToast('刪除失敗'); }
+      finally { saving.value = false; }
+    }
+
+    function editTimelineItem(item) {
+      if (item.type === 'feed') editFeed(item.raw);
+      else if (item.type === 'diaper') editDiaper(item.raw);
+      else if (item.type === 'sleep') editSleep(item.raw);
+    }
+
+    function editFeed(item) {
+      editingId.value = item.id;
+      editingType.value = 'feed';
+      const d = new Date(item.time);
+      feedTime.value = pad(d.getHours()) + ':' + pad(d.getMinutes());
+      feedAmount.value = item.amount_ml || 60;
+      feedNotes.value = item.note || '';
+      openSub('af');
     }
 
     // ===== DIAPER ACTIONS =====
@@ -395,37 +461,67 @@ const app = createApp({
     }
 
     async function saveDiaper() {
+      if (saving.value) return;
+      saving.value = true;
+      showLoading('儲存中...');
       try {
         const now = new Date();
         if (diaperTime.value) {
           const [h, m] = diaperTime.value.split(':');
           now.setHours(parseInt(h), parseInt(m), 0, 0);
         }
-        await API.createDiaper({
+        const data = {
           time: now.toISOString(),
           type: diaperType.value,
           color: showPooFields() ? diaperColor.value : null,
           texture: showPooFields() ? diaperConsistency.value : null,
           amount: showPooFields() ? diaperAmount.value : null,
           note: diaperNotes.value || null,
-        });
-        showToast('換片記錄已儲存');
+        };
+        if (editingId.value && editingType.value === 'diaper') {
+          await API.updateDiaper(editingId.value, data);
+        } else {
+          await API.createDiaper(data);
+        }
+        hideLoading();
+        showToast(editingId.value ? '記錄已更新' : '換片記錄已儲存');
         diaperNotes.value = '';
+        editingId.value = null;
+        editingType.value = null;
         closeSub();
         loadDiaperHistory();
         loadHomeData();
-      } catch (e) { showToast('儲存失敗'); }
+      } catch (e) { hideLoading(); showToast('儲存失敗'); }
+      finally { saving.value = false; }
     }
 
     async function deleteDiaper(id) {
       const ok = await confirmDialog('確認刪除', '刪除後無法恢復');
       if (!ok) return;
+      if (saving.value) return;
+      saving.value = true;
+      showLoading('刪除中...');
       try {
         await API.deleteDiaper(id);
+        hideLoading();
         showToast('已刪除');
         loadDiaperHistory();
         loadHomeData();
-      } catch (e) { showToast('刪除失敗'); }
+      } catch (e) { hideLoading(); showToast('刪除失敗'); }
+      finally { saving.value = false; }
+    }
+
+    function editDiaper(item) {
+      editingId.value = item.id;
+      editingType.value = 'diaper';
+      const d = new Date(item.time);
+      diaperTime.value = pad(d.getHours()) + ':' + pad(d.getMinutes());
+      diaperType.value = item.type || 'pee';
+      diaperColor.value = item.color || '黃色（正常）';
+      diaperConsistency.value = item.texture || '稀軟';
+      diaperAmount.value = item.amount || '少量';
+      diaperNotes.value = item.note || '';
+      openSub('ad');
     }
 
     // ===== SLEEP ACTIONS =====
@@ -443,6 +539,7 @@ const app = createApp({
     }
 
     function toggleSleep() {
+      if (saving.value) return;
       if (!isSleeping.value) {
         // Start sleeping
         isSleeping.value = true;
@@ -458,16 +555,20 @@ const app = createApp({
         if (sleepTimer) { clearInterval(sleepTimer); sleepTimer = null; }
         localStorage.removeItem('sleepTimer');
         if (sleepSeconds.value < 60) { sleepSeconds.value = 0; return; }
+        saving.value = true;
+        showLoading('儲存中...');
         API.createSleep({
           start_time: sleepStartISO.value,
           end_time: nowISO(),
           note: null,
         }).then(() => {
+          hideLoading();
           showToast('睡眠記錄已儲存');
           sleepSeconds.value = 0;
           loadSleepHistory();
           loadHomeData();
-        }).catch(() => { showToast('儲存失敗'); });
+        }).catch(() => { hideLoading(); showToast('儲存失敗'); })
+        .finally(() => { saving.value = false; });
       }
     }
 
@@ -475,6 +576,9 @@ const app = createApp({
       if (!manualSleepStart.value || !manualSleepEnd.value) {
         return showToast('請輸入入睡和醒來時間');
       }
+      if (saving.value) return;
+      saving.value = true;
+      showLoading('儲存中...');
       try {
         // Build date from time inputs
         const today = new Date();
@@ -485,27 +589,58 @@ const app = createApp({
         const end = new Date(today);
         end.setHours(parseInt(eh), parseInt(em), 0, 0);
         if (end <= start) end.setDate(end.getDate() + 1);
-        await API.createSleep({
+        const data = {
           start_time: start.toISOString(),
           end_time: end.toISOString(),
+          quality: sleepQuality.value || null,
           note: sleepNotes.value || null,
-        });
-        showToast('睡眠記錄已儲存');
+        };
+        if (editingId.value && editingType.value === 'sleep') {
+          await API.updateSleep(editingId.value, data);
+        } else {
+          await API.createSleep(data);
+        }
+        hideLoading();
+        showToast(editingId.value ? '記錄已更新' : '睡眠記錄已儲存');
+        editingId.value = null;
+        editingType.value = null;
         closeSub();
         loadSleepHistory();
         loadHomeData();
-      } catch (e) { showToast('儲存失敗'); }
+      } catch (e) { hideLoading(); showToast('儲存失敗'); }
+      finally { saving.value = false; }
     }
 
     async function deleteSleep(id) {
       const ok = await confirmDialog('確認刪除', '刪除後無法恢復');
       if (!ok) return;
+      if (saving.value) return;
+      saving.value = true;
+      showLoading('刪除中...');
       try {
         await API.deleteSleep(id);
+        hideLoading();
         showToast('已刪除');
         loadSleepHistory();
         loadHomeData();
-      } catch (e) { showToast('刪除失敗'); }
+      } catch (e) { hideLoading(); showToast('刪除失敗'); }
+      finally { saving.value = false; }
+    }
+
+    function editSleep(item) {
+      editingId.value = item.id;
+      editingType.value = 'sleep';
+      if (item.start_time) {
+        const s = new Date(item.start_time);
+        manualSleepStart.value = pad(s.getHours()) + ':' + pad(s.getMinutes());
+      }
+      if (item.end_time) {
+        const e = new Date(item.end_time);
+        manualSleepEnd.value = pad(e.getHours()) + ':' + pad(e.getMinutes());
+      }
+      sleepQuality.value = item.quality || '好 · 瞓得穩';
+      sleepNotes.value = item.note || '';
+      openSub('as');
     }
 
     // ===== PROFILE ACTIONS =====
@@ -521,6 +656,9 @@ const app = createApp({
 
     async function saveProfile() {
       if (!profileForm.name) return showToast('請輸入名稱');
+      if (saving.value) return;
+      saving.value = true;
+      showLoading('儲存中...');
       try {
         const genderMap = { '男': 'M', '女': 'F' };
         const wt = parseFloat(profileForm.birth_weight);
@@ -538,10 +676,12 @@ const app = createApp({
           doctor_name: baby.doctor_name ?? null,
           doctor_phone: baby.doctor_phone ?? null,
         });
+        hideLoading();
         showToast('資料已更新');
         closeSub();
         await loadBaby();
-      } catch (e) { console.error('saveProfile error:', e); showToast('儲存失敗'); }
+      } catch (e) { hideLoading(); console.error('saveProfile error:', e); showToast('儲存失敗'); }
+      finally { saving.value = false; }
     }
 
     // Date nav
@@ -817,6 +957,8 @@ const app = createApp({
       baby, babyName, babyAge, babyBirthday, daysSinceBirth, avatarUrl, pickAvatar,
       // Home
       homeStats, recentItems, viewDateStr, prevDay, nextDay,
+      // Edit
+      editingId, editingType, editFeed, editDiaper, editSleep, editTimelineItem, saving,
       // Feed
       feedHistory, feedAmount, feedType, feedTime, feedNotes,
       adjFeedAmount, saveFeed, deleteFeed, feedSummary, feedItemType,
@@ -888,10 +1030,10 @@ const app = createApp({
     </div>
     <div class="st">今日記錄</div>
     <div class="cs" v-if="recentItems.length">
-      <div class="cl" v-for="item in recentItems" :key="item.id + item.type">
+      <div class="cl" v-for="item in recentItems" :key="item.id + item.type" @click="editTimelineItem(item)">
         <div class="ri" :class="item.cls"><svg><use :href="'#' + item.icon"/></svg></div>
         <div class="cb"><div class="ct">{{ item.title }}</div><div class="cd" v-if="item.detail">{{ item.detail }}</div></div>
-        <div class="cr"><div class="cv" v-if="item.vol">{{ item.vol }}</div><div class="cm">{{ item.time }}</div></div>
+        <div class="cr"><div class="cv" v-if="item.vol">{{ item.vol }}</div><div class="cm">{{ item.time }}</div><div class="cm" style="color:var(--blue)">編輯</div></div>
       </div>
     </div>
     <div class="empty-state" v-else><svg><use href="#i-clock"/></svg><p>今日暫無記錄</p></div>
@@ -909,13 +1051,13 @@ const app = createApp({
     <div class="cs" v-if="feedHistory.length">
       <div class="sw-row" v-for="item in feedHistory" :key="item.id">
         <div class="sw-c" @touchstart="swStart" @touchmove.prevent="swMove" @touchend="swEnd">
-          <div class="cl">
+          <div class="cl" @click="editFeed(item)">
             <div class="ri milk"><svg><use href="#i-milk"/></svg></div>
             <div class="cb">
               <div class="ct">{{ feedItemType(item) }}</div>
               <div class="cd">{{ fmtTime(item.time) }}<template v-if="item.note"> · {{ item.note }}</template></div>
             </div>
-            <div class="cr"><div class="cv" v-if="item.amount_ml">{{ item.amount_ml }}ml</div></div>
+            <div class="cr"><div class="cv" v-if="item.amount_ml">{{ item.amount_ml }}ml</div><div class="cm" style="color:var(--blue)">編輯</div></div>
           </div>
         </div>
         <div class="sw-del" @click="deleteFeed(item.id)">刪除</div>
@@ -936,13 +1078,13 @@ const app = createApp({
     <div class="cs" v-if="diaperHistory.length">
       <div class="sw-row" v-for="item in diaperHistory" :key="item.id">
         <div class="sw-c" @touchstart="swStart" @touchmove.prevent="swMove" @touchend="swEnd">
-          <div class="cl">
+          <div class="cl" @click="editDiaper(item)">
             <div class="ri" :class="diaperItemCls(item)"><svg><use :href="'#' + diaperItemIcon(item)"/></svg></div>
             <div class="cb">
               <div class="ct">{{ diaperItemLabel(item) }}</div>
               <div class="cd" v-if="diaperItemDetail(item)">{{ diaperItemDetail(item) }}</div>
             </div>
-            <div class="cr"><div class="cm">{{ fmtTime(item.time) }}</div></div>
+            <div class="cr"><div class="cm">{{ fmtTime(item.time) }}</div><div class="cm" style="color:var(--blue)">編輯</div></div>
           </div>
         </div>
         <div class="sw-del" @click="deleteDiaper(item.id)">刪除</div>
@@ -975,13 +1117,13 @@ const app = createApp({
     <div class="cs" v-if="sleepHistory.length">
       <div class="sw-row" v-for="item in sleepHistory" :key="item.id">
         <div class="sw-c" @touchstart="swStart" @touchmove.prevent="swMove" @touchend="swEnd">
-          <div class="cl">
+          <div class="cl" @click="editSleep(item)">
             <div class="ri slp"><svg><use :href="item.end_time ? '#i-sun' : '#i-moon'"/></svg></div>
             <div class="cb">
               <div class="ct">{{ item.end_time ? '醒咗' : '瞓著咗' }}</div>
               <div class="cd" v-if="item.start_time && item.end_time">瞓咗 {{ fmtDurCN(Math.floor((new Date(item.end_time) - new Date(item.start_time)) / 1000)) }}</div>
             </div>
-            <div class="cr"><div class="cm">{{ fmtTime(item.end_time || item.start_time) }}</div></div>
+            <div class="cr"><div class="cm">{{ fmtTime(item.end_time || item.start_time) }}</div><div class="cm" style="color:var(--blue)">編輯</div></div>
           </div>
         </div>
         <div class="sw-del" @click="deleteSleep(item.id)">刪除</div>
@@ -1033,7 +1175,7 @@ const app = createApp({
 
   <!-- ===== SUB: ADD FEED ===== -->
   <div class="sub" :class="{active: activeSub === 'af'}">
-    <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">新增餵奶記錄</span><div class="nb-ph"></div></div>
+    <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">{{ editingType === 'feed' ? '編輯餵奶記錄' : '新增餵奶記錄' }}</span><div class="nb-ph"></div></div>
     <div class="st">餵奶資料</div>
     <div class="fc">
       <div class="fi"><span class="fl">類型</span><div class="fr">配方奶</div></div>
@@ -1041,12 +1183,12 @@ const app = createApp({
       <div class="fi"><span class="fl">奶量(ml)</span><div class="sp"><button @click="adjFeedAmount(-10)">−</button><div class="sv">{{ feedAmount }}</div><button @click="adjFeedAmount(10)">+</button></div></div>
     </div>
     <div class="fc" style="margin-top:16px"><div class="fi"><span class="fl">備註</span><input class="fv" type="text" placeholder="例如：有少量嘔奶" v-model="feedNotes"></div></div>
-    <div class="ba"><a href="javascript:;" class="bp" @click="saveFeed">儲存記錄</a></div>
+    <div class="ba"><a href="javascript:;" class="bp" :class="{disabled: saving}" @click="saveFeed">{{ editingType === 'feed' ? '更新記錄' : '儲存記錄' }}</a></div>
   </div>
 
   <!-- ===== SUB: ADD DIAPER ===== -->
   <div class="sub" :class="{active: activeSub === 'ad'}">
-    <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">新增換片記錄</span><div class="nb-ph"></div></div>
+    <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">{{ editingType === 'diaper' ? '編輯換片記錄' : '新增換片記錄' }}</span><div class="nb-ph"></div></div>
     <div class="st">換片資料</div>
     <div class="fc">
       <label class="fi"><span class="fl">類型</span><select class="fs" v-model="diaperType"><option value="pee">小便</option><option value="poo">大便</option><option value="both">大便 + 小便</option><option value="dry">乾淨</option></select></label>
@@ -1059,12 +1201,12 @@ const app = createApp({
     </div>
     <div class="fc" style="margin-top:16px"><div class="fi"><span class="fl">備註</span><input class="fv" type="text" placeholder="例如：有紅疹" v-model="diaperNotes"></div></div>
     <div class="nt ni"><span class="nn" style="color:var(--warn)"><svg><use href="#i-alert"/></svg></span><div class="nb2"><strong>大便顏色提示</strong>灰白色或帶血絲大便可能需要即時就醫。如有異常，請保留尿片並盡快諮詢醫生。</div></div>
-    <div class="ba"><a href="javascript:;" class="bp" @click="saveDiaper">儲存記錄</a></div>
+    <div class="ba"><a href="javascript:;" class="bp" :class="{disabled: saving}" @click="saveDiaper">{{ editingType === 'diaper' ? '更新記錄' : '儲存記錄' }}</a></div>
   </div>
 
   <!-- ===== SUB: ADD SLEEP ===== -->
   <div class="sub" :class="{active: activeSub === 'as'}">
-    <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">新增睡眠記錄</span><div class="nb-ph"></div></div>
+    <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">{{ editingType === 'sleep' ? '編輯睡眠記錄' : '新增睡眠記錄' }}</span><div class="nb-ph"></div></div>
     <div class="st">手動輸入睡眠</div>
     <div class="fc">
       <label class="fi"><span class="fl">入睡時間</span><input class="fv" type="time" v-model="manualSleepStart"></label>
@@ -1075,7 +1217,7 @@ const app = createApp({
       <div class="fi"><span class="fl">備註</span><input class="fv" type="text" placeholder="例如：半夜扎醒一次" v-model="sleepNotes"></div>
     </div>
     <div class="nt np"><span class="nn" style="color:var(--purple)"><svg><use href="#i-moon"/></svg></span><div class="nb2"><strong>睡眠小貼士</strong>新生兒約需 16-17 小時睡眠。可以用「睡眠」tab 嘅大按鈕快速記錄入睡/醒來時間。</div></div>
-    <div class="ba"><a href="javascript:;" class="bp" @click="saveManualSleep">儲存記錄</a></div>
+    <div class="ba"><a href="javascript:;" class="bp" :class="{disabled: saving}" @click="saveManualSleep">{{ editingType === 'sleep' ? '更新記錄' : '儲存記錄' }}</a></div>
   </div>
 
   <!-- ===== SUB: PROFILE ===== -->
@@ -1096,7 +1238,7 @@ const app = createApp({
       <label class="fi"><span class="fl">出生體重</span><input class="fv" type="text" v-model="profileForm.birth_weight" placeholder="例如：3.1"></label>
       <label class="fi"><span class="fl">出生身高</span><input class="fv" type="text" v-model="profileForm.birth_height" placeholder="例如：50"></label>
     </div>
-    <div class="ba"><a href="javascript:;" class="bp" @click="saveProfile">儲存資料</a></div>
+    <div class="ba"><a href="javascript:;" class="bp" :class="{disabled: saving}" @click="saveProfile">儲存資料</a></div>
   </div>
 
   <!-- ===== SUB: G6PD ===== -->

@@ -37,6 +37,7 @@
       return request('/feeds?' + q);
     },
     createFeed: (data) => request('/feeds', { method: 'POST', body: data }),
+    updateFeed: (id, data) => request('/feeds/' + id, { method: 'PUT', body: data }),
     deleteFeed: (id) => request('/feeds/' + id, { method: 'DELETE' }),
 
     // ---- Diapers ----
@@ -45,6 +46,7 @@
       return request('/diapers?' + q);
     },
     createDiaper: (data) => request('/diapers', { method: 'POST', body: data }),
+    updateDiaper: (id, data) => request('/diapers/' + id, { method: 'PUT', body: data }),
     deleteDiaper: (id) => request('/diapers/' + id, { method: 'DELETE' }),
 
     // ---- Sleeps ----
@@ -53,6 +55,7 @@
       return request('/sleeps?' + q);
     },
     createSleep: (data) => request('/sleeps', { method: 'POST', body: data }),
+    updateSleep: (id, data) => request('/sleeps/' + id, { method: 'PUT', body: data }),
     deleteSleep: (id) => request('/sleeps/' + id, { method: 'DELETE' }),
 
     // ---- Growth ----

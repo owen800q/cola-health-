@@ -162,6 +162,21 @@ sleepRoutes.post('/', async (c) => {
   return c.json({ id: result.meta.last_row_id }, 201);
 });
 
+// PUT /api/sleeps/:id
+sleepRoutes.put('/:id', async (c) => {
+  const db = c.env.DB;
+  const id = c.req.param('id');
+  const { start_time, end_time, quality, note } = await c.req.json();
+  if (!start_time) {
+    return c.json({ error: 'start_time is required' }, 400);
+  }
+  await db.prepare(
+    'UPDATE sleeps SET start_time = ?, end_time = ?, quality = ?, note = ? WHERE id = ?'
+  ).bind(start_time, end_time || null, quality || null, note || null, id).run();
+  const updated = await db.prepare('SELECT * FROM sleeps WHERE id = ?').bind(id).first();
+  return c.json(updated);
+});
+
 // DELETE /api/sleeps/:id
 sleepRoutes.delete('/:id', async (c) => {
   const db = c.env.DB;

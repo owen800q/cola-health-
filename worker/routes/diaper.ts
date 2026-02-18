@@ -86,6 +86,21 @@ diaperRoutes.post('/', async (c) => {
   return c.json({ id: result.meta.last_row_id, time, type }, 201);
 });
 
+// PUT /api/diapers/:id
+diaperRoutes.put('/:id', async (c) => {
+  const db = c.env.DB;
+  const id = c.req.param('id');
+  const { time, type, color, texture, amount, note } = await c.req.json();
+  if (!time || !type) {
+    return c.json({ error: 'time and type are required' }, 400);
+  }
+  await db.prepare(
+    'UPDATE diapers SET time = ?, type = ?, color = ?, texture = ?, amount = ?, note = ? WHERE id = ?'
+  ).bind(time, type, color || null, texture || null, amount || null, note || null, id).run();
+  const updated = await db.prepare('SELECT * FROM diapers WHERE id = ?').bind(id).first();
+  return c.json(updated);
+});
+
 // DELETE /api/diapers/:id
 diaperRoutes.delete('/:id', async (c) => {
   const db = c.env.DB;
