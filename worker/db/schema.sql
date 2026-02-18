@@ -100,6 +100,22 @@ CREATE TABLE IF NOT EXISTS notification_log (
   last_notified_at TEXT NOT NULL
 );
 
+-- Bottle assembly slots
+CREATE TABLE IF NOT EXISTS bottle_slots (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+-- Bottle assembly photos (multiple per slot)
+CREATE TABLE IF NOT EXISTS bottle_photos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  slot_id INTEGER NOT NULL REFERENCES bottle_slots(id) ON DELETE CASCADE,
+  photo_data TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_bottle_photos_slot ON bottle_photos(slot_id);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_feeds_time ON feeds(time DESC);
 CREATE INDEX IF NOT EXISTS idx_diapers_time ON diapers(time DESC);

@@ -244,36 +244,26 @@ const app = createApp({
     const bottleSlots = ref([]);
     const bottlePhotoZoom = ref(null);
 
-    function loadBottleSlots() {
+    async function loadBottleSlots() {
+      try { bottleSlots.value = await API.getBottles(); }
+      catch (e) { console.warn('Load bottles:', e); bottleSlots.value = []; }
+    }
+
+    async function addBottleSlot() {
+      var num = bottleSlots.value.length + 1;
       try {
-        var raw = JSON.parse(localStorage.getItem('bottleSlots') || '[]');
-        // Migrate old single-photo format to multi-photo
-        for (var i = 0; i < raw.length; i++) {
-          if (!Array.isArray(raw[i].photos)) {
-            raw[i].photos = raw[i].photo ? [{ dataUrl: raw[i].photo, timestamp: raw[i].timestamp }] : [];
-            delete raw[i].photo;
-            delete raw[i].timestamp;
-          }
-        }
-        bottleSlots.value = raw;
-      } catch (e) { bottleSlots.value = []; }
-    }
-
-    function saveBottleSlots() {
-      localStorage.setItem('bottleSlots', JSON.stringify(bottleSlots.value));
-    }
-
-    function addBottleSlot() {
-      var maxId = bottleSlots.value.reduce(function (m, b) { return Math.max(m, b.id); }, 0);
-      bottleSlots.value.push({ id: maxId + 1, name: '奶瓶 ' + (maxId + 1), photos: [] });
-      saveBottleSlots();
+        var slot = await API.createBottle({ name: '奶瓶 ' + num });
+        bottleSlots.value.push(slot);
+      } catch (e) { showToast('新增失敗'); }
     }
 
     async function removeBottleSlot(id) {
       var ok = await confirmDialog('刪除奶瓶', '確定刪除此奶瓶？');
       if (!ok) return;
-      bottleSlots.value = bottleSlots.value.filter(function (b) { return b.id !== id; });
-      saveBottleSlots();
+      try {
+        await API.deleteBottle(id);
+        bottleSlots.value = bottleSlots.value.filter(function (b) { return b.id !== id; });
+      } catch (e) { showToast('刪除失敗'); }
     }
 
     function _addPhotoToSlot(bottleId, file) {
@@ -288,12 +278,13 @@ const app = createApp({
           canvas.height = img.height * scale;
           canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
           var dataUrl = canvas.toDataURL('image/jpeg', 0.7);
-          var slot = bottleSlots.value.find(function (b) { return b.id === bottleId; });
-          if (slot) {
-            slot.photos.push({ dataUrl: dataUrl, timestamp: new Date().toISOString() });
-            saveBottleSlots();
+          showLoading('上傳中...');
+          API.addBottlePhoto(bottleId, { photo_data: dataUrl }).then(function (photo) {
+            var slot = bottleSlots.value.find(function (b) { return b.id === bottleId; });
+            if (slot) slot.photos.push(photo);
+            hideLoading();
             showToast('已新增相片');
-          }
+          }).catch(function () { hideLoading(); showToast('上傳失敗'); });
         };
         img.src = ev.target.result;
       };
@@ -325,10 +316,13 @@ const app = createApp({
       var ok = await confirmDialog('刪除相片', '確定刪除此相片？');
       if (!ok) return;
       var slot = bottleSlots.value.find(function (b) { return b.id === bottleId; });
-      if (slot) {
+      if (!slot) return;
+      var photo = slot.photos[photoIdx];
+      if (!photo) return;
+      try {
+        await API.deleteBottlePhoto(bottleId, photo.id);
         slot.photos.splice(photoIdx, 1);
-        saveBottleSlots();
-      }
+      } catch (e) { showToast('刪除失敗'); }
     }
 
     function fmtTimeAgo(iso) {

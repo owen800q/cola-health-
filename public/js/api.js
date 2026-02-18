@@ -97,5 +97,12 @@
     // ---- Export ----
     exportCSV: (babyId) => request('/export/csv?baby_id=' + babyId),
     exportPDF: (babyId) => request('/export/pdf?baby_id=' + babyId),
+
+    // ---- Bottles (assembly) ----
+    getBottles: () => request('/bottles'),
+    createBottle: (data) => request('/bottles', { method: 'POST', body: data }),
+    deleteBottle: (id) => request('/bottles/' + id, { method: 'DELETE' }),
+    addBottlePhoto: (slotId, data) => request('/bottles/' + slotId + '/photos', { method: 'POST', body: data }),
+    deleteBottlePhoto: (slotId, photoId) => request('/bottles/' + slotId + '/photos/' + photoId, { method: 'DELETE' }),
   };
 })();

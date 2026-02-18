@@ -13,6 +13,7 @@ import { statsRoutes } from './routes/stats';
 import { exportRoutes } from './routes/export';
 import { pushRoutes } from './routes/push';
 import { timelineRoutes } from './routes/timeline';
+import { bottleRoutes } from './routes/bottle';
 import { handleScheduled } from './scheduled';
 
 export type Bindings = {
@@ -42,6 +43,7 @@ app.route('/api/stats', statsRoutes);
 app.route('/api/export', exportRoutes);
 app.route('/api/push', pushRoutes);
 app.route('/api/timeline', timelineRoutes);
+app.route('/api/bottles', bottleRoutes);
 
 // Serve static files from Workers Sites KV
 app.get('*', serveStatic({ root: './', manifest }));
