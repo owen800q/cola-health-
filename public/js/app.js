@@ -808,6 +808,44 @@ const app = createApp({
       else { el.style.transform = ''; el.classList.remove('open'); }
     }
 
+    // ===== SWIPE BACK GESTURE =====
+    let sbX0 = 0, sbY0 = 0, sbActive = false, sbEl = null;
+    function subSwipeStart(e) {
+      const t = e.touches[0];
+      sbX0 = t.clientX;
+      sbY0 = t.clientY;
+      sbActive = t.clientX < 40; // only trigger from left edge
+      sbEl = e.currentTarget;
+    }
+    function subSwipeMove(e) {
+      if (!sbActive || !sbEl) return;
+      const dx = e.touches[0].clientX - sbX0;
+      const dy = Math.abs(e.touches[0].clientY - sbY0);
+      if (dy > 30) { sbActive = false; sbEl.style.transform = ''; return; }
+      if (dx > 0) {
+        e.preventDefault();
+        sbEl.style.transition = 'none';
+        sbEl.style.transform = 'translateX(' + dx + 'px)';
+      }
+    }
+    function subSwipeEnd(e) {
+      if (!sbActive || !sbEl) return;
+      const dx = e.changedTouches[0].clientX - sbX0;
+      if (dx > 100) {
+        sbEl.style.transition = 'transform 0.2s ease';
+        sbEl.style.transform = 'translateX(100%)';
+        setTimeout(() => {
+          closeSub();
+          if (sbEl) { sbEl.style.transform = ''; sbEl.style.transition = ''; }
+        }, 200);
+      } else {
+        sbEl.style.transition = 'transform 0.2s ease';
+        sbEl.style.transform = '';
+        setTimeout(() => { if (sbEl) sbEl.style.transition = ''; }, 200);
+      }
+      sbActive = false;
+    }
+
     // ===== REMINDERS =====
     const reminders = reactive({ feed: { enabled: true, interval_minutes: 180, id: 1 }, diaper: { enabled: false, interval_minutes: 180, id: 2 }, vaccine: { enabled: true, advance_days: 7, id: 3 }, awake_time: { enabled: false, max_awake_minutes: 60, id: 4 } });
 
@@ -979,6 +1017,7 @@ const app = createApp({
       dlgVisible, dlgTitle, dlgMsg, dlgConfirm, dlgCancel,
       // Swipe
       swStart, swMove, swEnd,
+      subSwipeStart, subSwipeMove, subSwipeEnd,
       // Helpers
       fmtTime, fmtDate, fmtDuration, fmtDurCN, showToast, initTimes,
       // Reminders
@@ -1174,7 +1213,7 @@ const app = createApp({
   </div>
 
   <!-- ===== SUB: ADD FEED ===== -->
-  <div class="sub" :class="{active: activeSub === 'af'}">
+  <div class="sub" :class="{active: activeSub === 'af'}" @touchstart="subSwipeStart" @touchmove="subSwipeMove" @touchend="subSwipeEnd">
     <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">{{ editingType === 'feed' ? '編輯餵奶記錄' : '新增餵奶記錄' }}</span><div class="nb-ph"></div></div>
     <div class="st">餵奶資料</div>
     <div class="fc">
@@ -1187,7 +1226,7 @@ const app = createApp({
   </div>
 
   <!-- ===== SUB: ADD DIAPER ===== -->
-  <div class="sub" :class="{active: activeSub === 'ad'}">
+  <div class="sub" :class="{active: activeSub === 'ad'}" @touchstart="subSwipeStart" @touchmove="subSwipeMove" @touchend="subSwipeEnd">
     <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">{{ editingType === 'diaper' ? '編輯換片記錄' : '新增換片記錄' }}</span><div class="nb-ph"></div></div>
     <div class="st">換片資料</div>
     <div class="fc">
@@ -1205,7 +1244,7 @@ const app = createApp({
   </div>
 
   <!-- ===== SUB: ADD SLEEP ===== -->
-  <div class="sub" :class="{active: activeSub === 'as'}">
+  <div class="sub" :class="{active: activeSub === 'as'}" @touchstart="subSwipeStart" @touchmove="subSwipeMove" @touchend="subSwipeEnd">
     <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">{{ editingType === 'sleep' ? '編輯睡眠記錄' : '新增睡眠記錄' }}</span><div class="nb-ph"></div></div>
     <div class="st">手動輸入睡眠</div>
     <div class="fc">
@@ -1221,7 +1260,7 @@ const app = createApp({
   </div>
 
   <!-- ===== SUB: PROFILE ===== -->
-  <div class="sub" :class="{active: activeSub === 'pf'}">
+  <div class="sub" :class="{active: activeSub === 'pf'}" @touchstart="subSwipeStart" @touchmove="subSwipeMove" @touchend="subSwipeEnd">
     <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">{{ babyName }}基本資料</span><div class="nb-ph"></div></div>
     <div style="display:flex;flex-direction:column;align-items:center;padding:24px 16px 8px">
       <div class="av" @click="pickAvatar" style="width:80px;height:80px;background:rgba(0,0,0,0.06);color:var(--t3);cursor:pointer;border-radius:50%;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative">
@@ -1242,7 +1281,7 @@ const app = createApp({
   </div>
 
   <!-- ===== SUB: G6PD ===== -->
-  <div class="sub" :class="{active: activeSub === 'g6'}">
+  <div class="sub" :class="{active: activeSub === 'g6'}" @touchstart="subSwipeStart" @touchmove="subSwipeMove" @touchend="subSwipeEnd">
     <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">蠶豆病 (G6PD缺乏症)</span><div class="nb-ph"></div></div>
     <div class="nt nw"><span class="nn" style="color:var(--red)"><svg><use href="#i-warn"/></svg></span><div class="nb2"><strong>需特別注意</strong>確診途徑：出生時新生兒篩查</div></div>
     <div class="st">禁用藥物及物品</div>
@@ -1265,7 +1304,7 @@ const app = createApp({
   </div>
 
   <!-- ===== SUB: VACCINE ===== -->
-  <div class="sub" :class="{active: activeSub === 'he'}">
+  <div class="sub" :class="{active: activeSub === 'he'}" @touchstart="subSwipeStart" @touchmove="subSwipeMove" @touchend="subSwipeEnd">
     <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">疫苗接種計劃</span><div class="nb-ph"></div></div>
     <div class="nt nc"><span class="nn" style="color:var(--blue)"><svg><use href="#i-info"/></svg></span><div class="nb2">根據衞生署「香港兒童免疫接種計劃」。<br>來源：<span style="color:var(--blue)">fhs.gov.hk</span></div></div>
     <template v-for="group in vaccineGroups" :key="group.label">
@@ -1283,7 +1322,7 @@ const app = createApp({
   </div>
 
   <!-- ===== SUB: HEALTH SCHEDULE ===== -->
-  <div class="sub" :class="{active: activeSub === 'hs'}">
+  <div class="sub" :class="{active: activeSub === 'hs'}" @touchstart="subSwipeStart" @touchmove="subSwipeMove" @touchend="subSwipeEnd">
     <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">幼兒健康及發展綜合計劃</span><div class="nb-ph"></div></div>
     <div class="nt nc"><span class="nn" style="color:var(--blue)"><svg><use href="#i-info"/></svg></span><div class="nb2"><strong>衞生署家庭健康服務</strong>24小時資訊熱線 2112 9900</div></div>
     <div class="st">生長監察及飲食評估</div>
@@ -1306,7 +1345,7 @@ const app = createApp({
   </div>
 
   <!-- ===== SUB: REMINDERS ===== -->
-  <div class="sub" :class="{active: activeSub === 'rm'}">
+  <div class="sub" :class="{active: activeSub === 'rm'}" @touchstart="subSwipeStart" @touchmove="subSwipeMove" @touchend="subSwipeEnd">
     <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">提醒及推送通知</span><div class="nb-ph"></div></div>
     <div class="nt nc" v-if="pushEnabled">
       <span class="nn" style="color:var(--green)"><svg><use href="#i-check"/></svg></span>
@@ -1350,7 +1389,7 @@ const app = createApp({
   </div>
 
   <!-- ===== SUB: STATISTICS ===== -->
-  <div class="sub" :class="{active: activeSub === 'st'}">
+  <div class="sub" :class="{active: activeSub === 'st'}" @touchstart="subSwipeStart" @touchmove="subSwipeMove" @touchend="subSwipeEnd">
     <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">統計報告</span><div class="nb-ph"></div></div>
     <div class="dual-row" style="margin-top:16px">
       <div class="dual-card"><div class="dv" style="color:var(--blue)">{{ feedSummary.avg }}<span style="font-size:14px;font-weight:400">ml</span></div><div class="dl">每餐平均</div></div>
@@ -1368,7 +1407,7 @@ const app = createApp({
   </div>
 
   <!-- ===== SUB: EXPORT ===== -->
-  <div class="sub" :class="{active: activeSub === 'ex'}">
+  <div class="sub" :class="{active: activeSub === 'ex'}" @touchstart="subSwipeStart" @touchmove="subSwipeMove" @touchend="subSwipeEnd">
     <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">匯出 PDF 報告</span><div class="nb-ph"></div></div>
     <div class="st">選擇報告範圍</div>
     <div class="fc">
