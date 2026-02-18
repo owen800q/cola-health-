@@ -240,6 +240,75 @@ const app = createApp({
       return name;
     }
 
+    // ===== BOTTLE ASSEMBLY =====
+    const bottleSlots = ref([]);
+    const bottlePhotoZoom = ref(null);
+
+    function loadBottleSlots() {
+      try { bottleSlots.value = JSON.parse(localStorage.getItem('bottleSlots') || '[]'); }
+      catch (e) { bottleSlots.value = []; }
+    }
+
+    function saveBottleSlots() {
+      localStorage.setItem('bottleSlots', JSON.stringify(bottleSlots.value));
+    }
+
+    function addBottleSlot() {
+      var maxId = bottleSlots.value.reduce(function (m, b) { return Math.max(m, b.id); }, 0);
+      bottleSlots.value.push({ id: maxId + 1, name: '奶瓶 ' + (maxId + 1), photo: null, timestamp: null });
+      saveBottleSlots();
+    }
+
+    async function removeBottleSlot(id) {
+      var ok = await confirmDialog('刪除奶瓶', '確定刪除此奶瓶？');
+      if (!ok) return;
+      bottleSlots.value = bottleSlots.value.filter(function (b) { return b.id !== id; });
+      saveBottleSlots();
+    }
+
+    function takeBottlePhoto(bottleId) {
+      var inp = document.createElement('input');
+      inp.type = 'file';
+      inp.accept = 'image/*';
+      inp.capture = 'environment';
+      inp.onchange = function () {
+        var file = inp.files[0];
+        if (!file) return;
+        var reader = new FileReader();
+        reader.onload = function (ev) {
+          var img = new Image();
+          img.onload = function () {
+            var canvas = document.createElement('canvas');
+            var maxW = 800;
+            var scale = Math.min(1, maxW / img.width);
+            canvas.width = img.width * scale;
+            canvas.height = img.height * scale;
+            canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+            var dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+            var slot = bottleSlots.value.find(function (b) { return b.id === bottleId; });
+            if (slot) {
+              slot.photo = dataUrl;
+              slot.timestamp = new Date().toISOString();
+              saveBottleSlots();
+              showToast('已拍攝');
+            }
+          };
+          img.src = ev.target.result;
+        };
+        reader.readAsDataURL(file);
+      };
+      inp.click();
+    }
+
+    function fmtTimeAgo(iso) {
+      if (!iso) return '';
+      var diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+      if (diff < 60) return '剛剛';
+      if (diff < 3600) return Math.floor(diff / 60) + '分鐘前';
+      if (diff < 86400) return Math.floor(diff / 3600) + '小時前';
+      return Math.floor(diff / 86400) + '日前';
+    }
+
     // Settings / Profile
     const profileForm = reactive({
       name: '', gender: '男', birthday: '',
@@ -1026,6 +1095,8 @@ const app = createApp({
       sleepSummaryData,
       // Vaccines
       vaccines, vaccineGroups, vaccineDesc, vaccineName, vaccineStatusCls, vaccineStatusText, vaccineIcon, vaccineIconColor,
+      // Bottle Assembly
+      bottleSlots, bottlePhotoZoom, loadBottleSlots, addBottleSlot, removeBottleSlot, takeBottlePhoto, fmtTimeAgo,
       // Profile
       profileForm, saveProfile, loadProfile,
       // Dialog
@@ -1081,6 +1152,7 @@ const app = createApp({
       <div class="gi" @click="openSub('st')"><div class="gi-ico" style="color:var(--teal)"><svg><use href="#i-barchart"/></svg></div><span>統計報告</span></div>
       <div class="gi" @click="openSub('ex')"><div class="gi-ico" style="color:rgba(0,0,0,0.4)"><svg><use href="#i-pdf"/></svg></div><span>匯出PDF</span></div>
       <div class="gi" @click="openSub('rm')"><div class="gi-ico" style="color:var(--orange)"><svg><use href="#i-bell"/></svg></div><span>提醒設定</span></div>
+      <div class="gi" @click="openSub('bt'); loadBottleSlots()"><div class="gi-ico" style="color:var(--teal)"><svg><use href="#i-bottle"/></svg></div><span>奶瓶組裝</span></div>
     </div>
     <div class="st">今日記錄</div>
     <div class="cs" v-if="recentItems.length">
@@ -1439,6 +1511,48 @@ const app = createApp({
     </div>
     <div class="btn-row"><a href="javascript:;" class="bp bp-blue" @click="showToast('PDF 已生成')">生成 PDF</a></div>
     <div style="padding:0 16px"><a href="javascript:;" class="bp-outline" @click="showToast('已分享')">分享給醫生</a></div>
+  </div>
+
+  <!-- ===== SUB: BOTTLE ASSEMBLY ===== -->
+  <div class="sub" :class="{active: activeSub === 'bt'}" @touchstart="subSwipeStart" @touchmove="subSwipeMove" @touchend="subSwipeEnd">
+    <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">奶瓶組裝</span><div class="nb-ph"></div></div>
+    <div class="nt nc" v-if="!bottleSlots.length" style="margin-top:16px">
+      <span class="nn" style="color:var(--blue)"><svg><use href="#i-info"/></svg></span>
+      <div class="nb2">新增奶瓶後，為每個奶瓶拍攝組裝狀態照片。<br>消毒後重新組裝時，一眼就知邊個奶嘴配邊個奶瓶。</div>
+    </div>
+    <div v-for="slot in bottleSlots" :key="slot.id" style="margin:12px 16px;background:var(--card);border-radius:14px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.06)">
+      <div style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid rgba(0,0,0,0.06)">
+        <svg style="width:20px;height:20px;color:var(--teal);margin-right:8px;flex-shrink:0"><use href="#i-bottle"/></svg>
+        <span style="font-size:16px;font-weight:600;flex:1">{{ slot.name }}</span>
+        <span @click="removeBottleSlot(slot.id)" style="cursor:pointer;color:var(--t3);padding:4px"><svg style="width:18px;height:18px"><use href="#i-trash"/></svg></span>
+      </div>
+      <div v-if="slot.photo" @click="bottlePhotoZoom = slot.photo" style="cursor:pointer">
+        <img :src="slot.photo" style="width:100%;display:block;max-height:300px;object-fit:cover">
+      </div>
+      <div v-else style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 16px;color:var(--t3);background:rgba(0,0,0,0.02)">
+        <svg style="width:40px;height:40px;opacity:0.3;margin-bottom:8px"><use href="#i-camera"/></svg>
+        <span style="font-size:14px">尚未拍攝</span>
+      </div>
+      <div style="display:flex;align-items:center;padding:10px 16px;gap:12px">
+        <span v-if="slot.timestamp" style="font-size:13px;color:var(--t2);flex:1">{{ fmtTimeAgo(slot.timestamp) }}拍攝</span>
+        <span v-else style="font-size:13px;color:var(--t3);flex:1"></span>
+        <a href="javascript:;" @click="takeBottlePhoto(slot.id)" style="display:inline-flex;align-items:center;gap:4px;padding:6px 14px;border-radius:8px;background:var(--teal);color:#fff;font-size:14px;text-decoration:none">
+          <svg style="width:16px;height:16px"><use href="#i-camera"/></svg>
+          {{ slot.photo ? '重新拍攝' : '拍攝記錄' }}
+        </a>
+      </div>
+    </div>
+    <div style="padding:12px 16px">
+      <a href="javascript:;" @click="addBottleSlot" style="display:flex;align-items:center;justify-content:center;gap:6px;padding:14px;border-radius:12px;border:2px dashed var(--t4);color:var(--t2);font-size:15px;text-decoration:none">
+        <svg style="width:18px;height:18px"><use href="#i-plus"/></svg> 新增奶瓶
+      </a>
+    </div>
+    <div style="height:32px"></div>
+  </div>
+
+  <!-- ===== FULLSCREEN PHOTO OVERLAY ===== -->
+  <div v-if="bottlePhotoZoom" @click="bottlePhotoZoom = null" style="position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.9);display:flex;align-items:center;justify-content:center;cursor:pointer">
+    <img :src="bottlePhotoZoom" style="max-width:100%;max-height:100%;object-fit:contain">
   </div>
 
   <!-- ===== TAB BAR ===== -->
