@@ -245,8 +245,18 @@ const app = createApp({
     const bottlePhotoZoom = ref(null);
 
     function loadBottleSlots() {
-      try { bottleSlots.value = JSON.parse(localStorage.getItem('bottleSlots') || '[]'); }
-      catch (e) { bottleSlots.value = []; }
+      try {
+        var raw = JSON.parse(localStorage.getItem('bottleSlots') || '[]');
+        // Migrate old single-photo format to multi-photo
+        for (var i = 0; i < raw.length; i++) {
+          if (!Array.isArray(raw[i].photos)) {
+            raw[i].photos = raw[i].photo ? [{ dataUrl: raw[i].photo, timestamp: raw[i].timestamp }] : [];
+            delete raw[i].photo;
+            delete raw[i].timestamp;
+          }
+        }
+        bottleSlots.value = raw;
+      } catch (e) { bottleSlots.value = []; }
     }
 
     function saveBottleSlots() {
@@ -255,7 +265,7 @@ const app = createApp({
 
     function addBottleSlot() {
       var maxId = bottleSlots.value.reduce(function (m, b) { return Math.max(m, b.id); }, 0);
-      bottleSlots.value.push({ id: maxId + 1, name: '奶瓶 ' + (maxId + 1), photo: null, timestamp: null });
+      bottleSlots.value.push({ id: maxId + 1, name: '奶瓶 ' + (maxId + 1), photos: [] });
       saveBottleSlots();
     }
 
@@ -266,38 +276,59 @@ const app = createApp({
       saveBottleSlots();
     }
 
+    function _addPhotoToSlot(bottleId, file) {
+      var reader = new FileReader();
+      reader.onload = function (ev) {
+        var img = new Image();
+        img.onload = function () {
+          var canvas = document.createElement('canvas');
+          var maxW = 800;
+          var scale = Math.min(1, maxW / img.width);
+          canvas.width = img.width * scale;
+          canvas.height = img.height * scale;
+          canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+          var dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+          var slot = bottleSlots.value.find(function (b) { return b.id === bottleId; });
+          if (slot) {
+            slot.photos.push({ dataUrl: dataUrl, timestamp: new Date().toISOString() });
+            saveBottleSlots();
+            showToast('已新增相片');
+          }
+        };
+        img.src = ev.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
     function takeBottlePhoto(bottleId) {
       var inp = document.createElement('input');
       inp.type = 'file';
       inp.accept = 'image/*';
       inp.capture = 'environment';
       inp.onchange = function () {
-        var file = inp.files[0];
-        if (!file) return;
-        var reader = new FileReader();
-        reader.onload = function (ev) {
-          var img = new Image();
-          img.onload = function () {
-            var canvas = document.createElement('canvas');
-            var maxW = 800;
-            var scale = Math.min(1, maxW / img.width);
-            canvas.width = img.width * scale;
-            canvas.height = img.height * scale;
-            canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-            var dataUrl = canvas.toDataURL('image/jpeg', 0.7);
-            var slot = bottleSlots.value.find(function (b) { return b.id === bottleId; });
-            if (slot) {
-              slot.photo = dataUrl;
-              slot.timestamp = new Date().toISOString();
-              saveBottleSlots();
-              showToast('已拍攝');
-            }
-          };
-          img.src = ev.target.result;
-        };
-        reader.readAsDataURL(file);
+        if (inp.files[0]) _addPhotoToSlot(bottleId, inp.files[0]);
       };
       inp.click();
+    }
+
+    function pickBottlePhoto(bottleId) {
+      var inp = document.createElement('input');
+      inp.type = 'file';
+      inp.accept = 'image/*';
+      inp.onchange = function () {
+        if (inp.files[0]) _addPhotoToSlot(bottleId, inp.files[0]);
+      };
+      inp.click();
+    }
+
+    async function removeBottlePhoto(bottleId, photoIdx) {
+      var ok = await confirmDialog('刪除相片', '確定刪除此相片？');
+      if (!ok) return;
+      var slot = bottleSlots.value.find(function (b) { return b.id === bottleId; });
+      if (slot) {
+        slot.photos.splice(photoIdx, 1);
+        saveBottleSlots();
+      }
     }
 
     function fmtTimeAgo(iso) {
@@ -1096,7 +1127,8 @@ const app = createApp({
       // Vaccines
       vaccines, vaccineGroups, vaccineDesc, vaccineName, vaccineStatusCls, vaccineStatusText, vaccineIcon, vaccineIconColor,
       // Bottle Assembly
-      bottleSlots, bottlePhotoZoom, loadBottleSlots, addBottleSlot, removeBottleSlot, takeBottlePhoto, fmtTimeAgo,
+      bottleSlots, bottlePhotoZoom, loadBottleSlots, addBottleSlot, removeBottleSlot,
+      takeBottlePhoto, pickBottlePhoto, removeBottlePhoto, fmtTimeAgo,
       // Profile
       profileForm, saveProfile, loadProfile,
       // Dialog
@@ -1518,27 +1550,32 @@ const app = createApp({
     <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">奶瓶組裝</span><div class="nb-ph"></div></div>
     <div class="nt nc" v-if="!bottleSlots.length" style="margin-top:16px">
       <span class="nn" style="color:var(--blue)"><svg><use href="#i-info"/></svg></span>
-      <div class="nb2">新增奶瓶後，為每個奶瓶拍攝組裝狀態照片。<br>消毒後重新組裝時，一眼就知邊個奶嘴配邊個奶瓶。</div>
+      <div class="nb2">新增奶瓶後，拍攝組裝前後及各零件嘅照片。<br>消毒後重新組裝時，一眼就知點樣砌返。</div>
     </div>
     <div v-for="slot in bottleSlots" :key="slot.id" style="margin:12px 16px;background:var(--card);border-radius:14px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.06)">
       <div style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid rgba(0,0,0,0.06)">
         <svg style="width:20px;height:20px;color:var(--teal);margin-right:8px;flex-shrink:0"><use href="#i-bottle"/></svg>
         <span style="font-size:16px;font-weight:600;flex:1">{{ slot.name }}</span>
+        <span style="font-size:12px;color:var(--t3);margin-right:8px" v-if="slot.photos.length">{{ slot.photos.length }}張</span>
         <span @click="removeBottleSlot(slot.id)" style="cursor:pointer;color:var(--t3);padding:4px"><svg style="width:18px;height:18px"><use href="#i-trash"/></svg></span>
       </div>
-      <div v-if="slot.photo" @click="bottlePhotoZoom = slot.photo" style="cursor:pointer">
-        <img :src="slot.photo" style="width:100%;display:block;max-height:300px;object-fit:cover">
+      <div v-if="slot.photos.length" style="display:grid;grid-template-columns:repeat(3,1fr);gap:2px;padding:2px">
+        <div v-for="(p, pi) in slot.photos" :key="pi" style="position:relative;aspect-ratio:1;overflow:hidden">
+          <img :src="p.dataUrl" @click="bottlePhotoZoom = p.dataUrl" style="width:100%;height:100%;object-fit:cover;display:block;cursor:pointer">
+          <span @click.stop="removeBottlePhoto(slot.id, pi)" style="position:absolute;top:4px;right:4px;width:22px;height:22px;background:rgba(0,0,0,0.5);border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer"><svg style="width:14px;height:14px;color:#fff"><use href="#i-close"/></svg></span>
+          <span style="position:absolute;bottom:0;left:0;right:0;padding:2px 4px;background:linear-gradient(transparent,rgba(0,0,0,0.5));color:#fff;font-size:10px;text-align:right">{{ fmtTimeAgo(p.timestamp) }}</span>
+        </div>
       </div>
-      <div v-else style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 16px;color:var(--t3);background:rgba(0,0,0,0.02)">
-        <svg style="width:40px;height:40px;opacity:0.3;margin-bottom:8px"><use href="#i-camera"/></svg>
-        <span style="font-size:14px">尚未拍攝</span>
+      <div v-else style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 16px;color:var(--t3);background:rgba(0,0,0,0.02)">
+        <svg style="width:36px;height:36px;opacity:0.3;margin-bottom:6px"><use href="#i-camera"/></svg>
+        <span style="font-size:13px">尚未新增相片</span>
       </div>
-      <div style="display:flex;align-items:center;padding:10px 16px;gap:12px">
-        <span v-if="slot.timestamp" style="font-size:13px;color:var(--t2);flex:1">{{ fmtTimeAgo(slot.timestamp) }}拍攝</span>
-        <span v-else style="font-size:13px;color:var(--t3);flex:1"></span>
-        <a href="javascript:;" @click="takeBottlePhoto(slot.id)" style="display:inline-flex;align-items:center;gap:4px;padding:6px 14px;border-radius:8px;background:var(--teal);color:#fff;font-size:14px;text-decoration:none">
-          <svg style="width:16px;height:16px"><use href="#i-camera"/></svg>
-          {{ slot.photo ? '重新拍攝' : '拍攝記錄' }}
+      <div style="display:flex;align-items:center;padding:10px 16px;gap:8px">
+        <a href="javascript:;" @click="takeBottlePhoto(slot.id)" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;border-radius:8px;background:var(--teal);color:#fff;font-size:13px;text-decoration:none;flex:1;justify-content:center">
+          <svg style="width:15px;height:15px"><use href="#i-camera"/></svg> 拍攝
+        </a>
+        <a href="javascript:;" @click="pickBottlePhoto(slot.id)" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;border-radius:8px;background:var(--blue);color:#fff;font-size:13px;text-decoration:none;flex:1;justify-content:center">
+          <svg style="width:15px;height:15px"><use href="#i-dl"/></svg> 相簿
         </a>
       </div>
     </div>
