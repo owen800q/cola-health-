@@ -334,6 +334,88 @@ const app = createApp({
       return Math.floor(diff / 86400) + '日前';
     }
 
+    // ===== AI CHAT =====
+    const chatMessages = ref([]);
+    const chatInput = ref('');
+    const chatImage = ref(null);
+    const chatLoading = ref(false);
+    const chatError = ref('');
+
+    function sendChat() {
+      var msg = chatInput.value.trim();
+      if ((!msg && !chatImage.value) || chatLoading.value) return;
+      if (!msg && chatImage.value) msg = '請分析這張圖片';
+      chatInput.value = '';
+      chatError.value = '';
+      var img = chatImage.value;
+      chatImage.value = null;
+      chatMessages.value.push({ role: 'user', content: msg, image: img || null });
+      chatMessages.value.push({ role: 'assistant', content: '' });
+      chatLoading.value = true;
+      var aidx = chatMessages.value.length - 1;
+      var history = chatMessages.value.slice(0, -2).map(function (m) {
+        var h = { role: m.role, content: m.content };
+        if (m.image) h.image = m.image;
+        return h;
+      });
+      API.chatAI(
+        msg, history, img,
+        function onChunk(token) {
+          chatMessages.value[aidx].content += token;
+          nextTick(function () {
+            var el = document.getElementById('chat-scroll');
+            if (el) el.scrollTop = el.scrollHeight;
+          });
+        },
+        function onDone() { chatLoading.value = false; },
+        function onError(err) {
+          chatLoading.value = false;
+          chatError.value = err;
+          if (chatMessages.value[aidx] && chatMessages.value[aidx].content === '') {
+            chatMessages.value.splice(aidx, 1);
+          }
+        }
+      );
+      nextTick(function () {
+        var el = document.getElementById('chat-scroll');
+        if (el) el.scrollTop = el.scrollHeight;
+      });
+    }
+
+    function pickChatImage() {
+      var inp = document.createElement('input');
+      inp.type = 'file';
+      inp.accept = 'image/*';
+      inp.onchange = function () {
+        if (!inp.files[0]) return;
+        var reader = new FileReader();
+        reader.onload = function (ev) {
+          var img = new Image();
+          img.onload = function () {
+            var canvas = document.createElement('canvas');
+            var maxW = 800;
+            var scale = Math.min(1, maxW / img.width);
+            canvas.width = img.width * scale;
+            canvas.height = img.height * scale;
+            canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+            chatImage.value = canvas.toDataURL('image/jpeg', 0.7);
+          };
+          img.src = ev.target.result;
+        };
+        reader.readAsDataURL(inp.files[0]);
+      };
+      inp.click();
+    }
+
+    function clearChatImage() { chatImage.value = null; }
+
+    function clearChat() {
+      chatMessages.value = [];
+      chatError.value = '';
+      chatImage.value = null;
+      chatInput.value = '';
+    }
+
     // Settings / Profile
     const profileForm = reactive({
       name: '', gender: '男', birthday: '',
@@ -1123,6 +1205,9 @@ const app = createApp({
       // Bottle Assembly
       bottleSlots, bottlePhotoZoom, loadBottleSlots, addBottleSlot, removeBottleSlot,
       takeBottlePhoto, pickBottlePhoto, removeBottlePhoto, fmtTimeAgo,
+      // AI Chat
+      chatMessages, chatInput, chatImage, chatLoading, chatError,
+      sendChat, pickChatImage, clearChatImage, clearChat,
       // Profile
       profileForm, saveProfile, loadProfile,
       // Dialog
@@ -1179,6 +1264,7 @@ const app = createApp({
       <div class="gi" @click="openSub('ex')"><div class="gi-ico" style="color:rgba(0,0,0,0.4)"><svg><use href="#i-pdf"/></svg></div><span>匯出PDF</span></div>
       <div class="gi" @click="openSub('rm')"><div class="gi-ico" style="color:var(--orange)"><svg><use href="#i-bell"/></svg></div><span>提醒設定</span></div>
       <div class="gi" @click="openSub('bt'); loadBottleSlots()"><div class="gi-ico" style="color:var(--teal)"><svg><use href="#i-bottle"/></svg></div><span>奶瓶組裝</span></div>
+      <div class="gi" @click="openSub('ai')"><div class="gi-ico" style="color:var(--purple)"><svg><use href="#i-chat"/></svg></div><span>問 AI</span></div>
     </div>
     <div class="st">今日記錄</div>
     <div class="cs" v-if="recentItems.length">
@@ -1579,6 +1665,52 @@ const app = createApp({
       </a>
     </div>
     <div style="height:32px"></div>
+  </div>
+
+  <!-- ===== SUB: AI CHAT ===== -->
+  <div class="sub" :class="{active: activeSub === 'ai'}" style="overflow:hidden" @touchstart="subSwipeStart" @touchmove="subSwipeMove" @touchend="subSwipeEnd">
+    <div class="nb">
+      <span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span>
+      <span class="nb-t">問 AI 助手</span>
+      <span class="nb-a" @click="clearChat()" v-if="chatMessages.length"><svg><use href="#i-trash"/></svg></span>
+      <div class="nb-ph" v-else></div>
+    </div>
+    <div class="chat-body" id="chat-scroll">
+      <div v-if="!chatMessages.length" class="chat-welcome">
+        <div class="chat-welcome-icon"><svg><use href="#i-chat"/></svg></div>
+        <h3>你好！我係 AI 助手</h3>
+        <p>你可以問我關於{{ babyName }}嘅任何問題，亦可以上傳圖片（例如奶粉成份表）：</p>
+        <div class="chat-suggestions">
+          <div class="chat-sug" @click="chatInput = '今日餵奶情況點樣？'; sendChat()">今日餵奶情況點樣？</div>
+          <div class="chat-sug" @click="chatInput = 'BB嘅睡眠時間正唔正常？'; sendChat()">BB嘅睡眠時間正唔正常？</div>
+          <div class="chat-sug" @click="chatInput = '下一針疫苗幾時打？'; sendChat()">下一針疫苗幾時打？</div>
+          <div class="chat-sug" @click="chatInput = 'BB嘅體重發育正常嗎？'; sendChat()">BB嘅體重發育正常嗎？</div>
+        </div>
+      </div>
+      <div v-for="(msg, idx) in chatMessages" :key="idx" class="chat-msg" :class="{'chat-msg-user': msg.role === 'user', 'chat-msg-ai': msg.role === 'assistant'}">
+        <div class="chat-bubble">
+          <img v-if="msg.image" :src="msg.image" class="chat-user-img">
+          <div class="chat-text">{{ msg.content }}<span v-if="msg.role === 'assistant' && chatLoading && idx === chatMessages.length - 1" class="chat-cursor">|</span></div>
+        </div>
+      </div>
+      <div v-if="chatError" class="chat-error">
+        <svg><use href="#i-alert"/></svg>
+        <span>{{ chatError }}</span>
+      </div>
+    </div>
+    <div class="chat-input-bar">
+      <div class="chat-img-preview" v-if="chatImage">
+        <img :src="chatImage">
+        <button class="chat-img-x" @click="clearChatImage()">&times;</button>
+      </div>
+      <div class="chat-input-row">
+        <button class="chat-img-btn" @click="pickChatImage()" :disabled="chatLoading"><svg><use href="#i-image"/></svg></button>
+        <input id="chat-input" class="chat-input" type="text" placeholder="輸入你嘅問題..." v-model="chatInput" @keyup.enter="sendChat()" :disabled="chatLoading">
+        <button class="chat-send" @click="sendChat()" :disabled="(!chatInput.trim() && !chatImage) || chatLoading">
+          <svg viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+    </div>
   </div>
 
   <!-- ===== FULLSCREEN PHOTO OVERLAY ===== -->

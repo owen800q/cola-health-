@@ -104,5 +104,44 @@
     deleteBottle: (id) => request('/bottles/' + id, { method: 'DELETE' }),
     addBottlePhoto: (slotId, data) => request('/bottles/' + slotId + '/photos', { method: 'POST', body: data }),
     deleteBottlePhoto: (slotId, photoId) => request('/bottles/' + slotId + '/photos/' + photoId, { method: 'DELETE' }),
+
+    // ---- AI Chat (streaming) ----
+    chatAI: async function (message, history, image, onChunk, onDone, onError) {
+      try {
+        var res = await fetch(BASE + '/ai/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: message, history: history, image: image || null }),
+        });
+        if (!res.ok) {
+          var errData = await res.json().catch(function () { return { error: res.statusText }; });
+          if (onError) onError(errData.error || '請求失敗');
+          return;
+        }
+        var reader = res.body.getReader();
+        var decoder = new TextDecoder();
+        var buffer = '';
+        while (true) {
+          var chunk = await reader.read();
+          if (chunk.done) break;
+          buffer += decoder.decode(chunk.value, { stream: true });
+          var lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+          for (var i = 0; i < lines.length; i++) {
+            var trimmed = lines[i].trim();
+            if (!trimmed || trimmed.indexOf('data: ') !== 0) continue;
+            var payload = trimmed.slice(6);
+            if (payload === '[DONE]') continue;
+            try {
+              var parsed = JSON.parse(payload);
+              if (parsed.response) onChunk(parsed.response);
+            } catch (e) { /* skip non-JSON */ }
+          }
+        }
+        if (onDone) onDone();
+      } catch (e) {
+        if (onError) onError('網絡錯誤，請稍後再試');
+      }
+    },
   };
 })();

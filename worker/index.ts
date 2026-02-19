@@ -14,10 +14,12 @@ import { exportRoutes } from './routes/export';
 import { pushRoutes } from './routes/push';
 import { timelineRoutes } from './routes/timeline';
 import { bottleRoutes } from './routes/bottle';
+import { aiRoutes } from './routes/ai';
 import { handleScheduled } from './scheduled';
 
 export type Bindings = {
   DB: D1Database;
+  AI: Ai;
   VAPID_PUBLIC_KEY: string;
   VAPID_PRIVATE_KEY: string;
   VAPID_SUBJECT: string;
@@ -44,6 +46,7 @@ app.route('/api/export', exportRoutes);
 app.route('/api/push', pushRoutes);
 app.route('/api/timeline', timelineRoutes);
 app.route('/api/bottles', bottleRoutes);
+app.route('/api/ai', aiRoutes);
 
 // Serve static files from Workers Sites KV
 app.get('*', serveStatic({ root: './', manifest }));
