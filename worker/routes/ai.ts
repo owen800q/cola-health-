@@ -6,6 +6,19 @@ export const aiRoutes = new Hono<{ Bindings: Bindings }>();
 const TEXT_MODEL = '@cf/meta/llama-3.1-8b-instruct-fast';
 const VISION_MODEL = '@cf/meta/llama-3.2-11b-vision-instruct';
 
+// Track whether we've agreed to the Meta license for the vision model
+let visionLicenseAgreed = false;
+
+async function ensureVisionLicense(ai: any) {
+  if (visionLicenseAgreed) return;
+  try {
+    await ai.run(VISION_MODEL, { prompt: 'agree' });
+  } catch (e) {
+    // May throw if already agreed — that's fine
+  }
+  visionLicenseAgreed = true;
+}
+
 function buildSystemPrompt(
   baby: any,
   todayFeeds: any[],
@@ -153,6 +166,11 @@ aiRoutes.post('/chat', async (c) => {
   const model = hasImage ? VISION_MODEL : TEXT_MODEL;
 
   try {
+    // Ensure Meta license is agreed for vision model
+    if (hasImage) {
+      await ensureVisionLicense(c.env.AI);
+    }
+
     const aiParams: any = {
       messages,
       stream: true,
