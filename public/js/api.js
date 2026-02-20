@@ -106,12 +106,14 @@
     deleteBottlePhoto: (slotId, photoId) => request('/bottles/' + slotId + '/photos/' + photoId, { method: 'DELETE' }),
 
     // ---- AI Chat (streaming) ----
-    chatAI: async function (message, history, image, onChunk, onDone, onError) {
+    chatAI: async function (message, history, image, dayRange, onChunk, onDone, onError) {
       try {
+        var payload = { message: message, history: history, image: image || null };
+        if (dayRange) { payload.from = dayRange.from; payload.to = dayRange.to; }
         var res = await fetch(BASE + '/ai/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: message, history: history, image: image || null }),
+          body: JSON.stringify(payload),
         });
         if (!res.ok) {
           var errData = await res.json().catch(function () { return { error: res.statusText }; });

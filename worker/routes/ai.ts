@@ -126,6 +126,8 @@ aiRoutes.post('/chat', async (c) => {
   const message = body.message;
   const history = body.history || [];
   const image = body.image || null; // base64 data URL
+  const dayFrom = body.from; // local day start ISO from frontend
+  const dayTo = body.to;     // local day end ISO from frontend
 
   if (!message || typeof message !== 'string' || message.trim().length === 0) {
     return c.json({ error: '請輸入問題' }, 400);
@@ -134,13 +136,19 @@ aiRoutes.post('/chat', async (c) => {
   const trimmedHistory = history.slice(-6);
 
   // Gather context from D1 in parallel
-  const today = new Date().toISOString().split('T')[0];
+  // Use local-timezone day range from frontend for accurate "today" queries
   const [baby, todayFeeds, todayDiapers, todaySleeps, latestGrowth, vaccines, recentFeedStats] =
     await Promise.all([
       db.prepare('SELECT * FROM baby WHERE id = 1').first(),
-      db.prepare("SELECT time, amount_ml, note FROM feeds WHERE date(time) = ? ORDER BY time DESC").bind(today).all(),
-      db.prepare("SELECT time, type, color, texture, note FROM diapers WHERE date(time) = ? ORDER BY time DESC").bind(today).all(),
-      db.prepare("SELECT start_time, end_time, quality, note FROM sleeps WHERE date(start_time) = ? ORDER BY start_time DESC").bind(today).all(),
+      dayFrom && dayTo
+        ? db.prepare("SELECT time, amount_ml, note FROM feeds WHERE time >= ? AND time <= ? ORDER BY time DESC").bind(dayFrom, dayTo).all()
+        : db.prepare("SELECT time, amount_ml, note FROM feeds WHERE date(time) = date('now') ORDER BY time DESC").all(),
+      dayFrom && dayTo
+        ? db.prepare("SELECT time, type, color, texture, note FROM diapers WHERE time >= ? AND time <= ? ORDER BY time DESC").bind(dayFrom, dayTo).all()
+        : db.prepare("SELECT time, type, color, texture, note FROM diapers WHERE date(time) = date('now') ORDER BY time DESC").all(),
+      dayFrom && dayTo
+        ? db.prepare("SELECT start_time, end_time, quality, note FROM sleeps WHERE start_time >= ? AND start_time <= ? ORDER BY start_time DESC").bind(dayFrom, dayTo).all()
+        : db.prepare("SELECT start_time, end_time, quality, note FROM sleeps WHERE date(start_time) = date('now') ORDER BY start_time DESC").all(),
       db.prepare('SELECT * FROM growth ORDER BY date DESC LIMIT 1').first(),
       db.prepare("SELECT name, dose, scheduled_date, status FROM vaccines WHERE status IN ('pending','overdue') ORDER BY scheduled_date ASC LIMIT 5").all(),
       db.prepare(`SELECT COUNT(*) as count, COALESCE(SUM(amount_ml),0) as total_ml,

@@ -356,8 +356,9 @@ const app = createApp({
       var history = chatMessages.value.slice(0, -2).map(function (m) {
         return { role: m.role, content: m.content };
       });
+      var range = localDayRange();
       API.chatAI(
-        msg, history, img,
+        msg, history, img, range,
         function onChunk(token) {
           chatMessages.value[aidx].content += token;
           nextTick(function () {
