@@ -1667,7 +1667,7 @@ const app = createApp({
   </div>
 
   <!-- ===== SUB: AI CHAT ===== -->
-  <div class="sub" :class="{active: activeSub === 'ai'}" style="overflow:hidden;display:flex;flex-direction:column" @touchstart="subSwipeStart" @touchmove="subSwipeMove" @touchend="subSwipeEnd">
+  <div class="sub chat-sub" :class="{active: activeSub === 'ai'}" @touchstart="subSwipeStart" @touchmove="subSwipeMove" @touchend="subSwipeEnd">
     <div class="nb">
       <span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span>
       <span class="nb-t">問 AI 助手</span>
