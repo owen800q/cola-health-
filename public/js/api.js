@@ -132,10 +132,10 @@
           for (var i = 0; i < lines.length; i++) {
             var trimmed = lines[i].trim();
             if (!trimmed || trimmed.indexOf('data: ') !== 0) continue;
-            var payload = trimmed.slice(6);
-            if (payload === '[DONE]') continue;
+            var data = trimmed.slice(6);
+            if (data === '[DONE]') continue;
             try {
-              var parsed = JSON.parse(payload);
+              var parsed = JSON.parse(data);
               if (parsed.response) onChunk(parsed.response);
             } catch (e) { /* skip non-JSON */ }
           }
