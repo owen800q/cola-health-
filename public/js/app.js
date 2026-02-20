@@ -354,9 +354,7 @@ const app = createApp({
       chatLoading.value = true;
       var aidx = chatMessages.value.length - 1;
       var history = chatMessages.value.slice(0, -2).map(function (m) {
-        var h = { role: m.role, content: m.content };
-        if (m.image) h.image = m.image;
-        return h;
+        return { role: m.role, content: m.content };
       });
       API.chatAI(
         msg, history, img,

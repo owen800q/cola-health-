@@ -140,48 +140,39 @@ aiRoutes.post('/chat', async (c) => {
     latestGrowth, vaccines.results, recentFeedStats,
   );
 
-  // Build messages array
+  // Build messages array (text-only — images go via top-level `image` param)
   const messages: any[] = [{ role: 'system', content: systemPrompt }];
 
-  // Add history — reconstruct content arrays for image messages
   for (const h of trimmedHistory) {
-    if (h.role === 'user' && h.image) {
-      messages.push({
-        role: 'user',
-        content: [
-          { type: 'text', text: h.content },
-          { type: 'image_url', image_url: { url: h.image } },
-        ],
-      });
-    } else {
-      messages.push({ role: h.role, content: h.content });
-    }
+    messages.push({ role: h.role, content: h.content });
   }
+  messages.push({ role: 'user', content: message });
 
-  // Add current user message
-  if (image) {
-    messages.push({
-      role: 'user',
-      content: [
-        { type: 'text', text: message },
-        { type: 'image_url', image_url: { url: image } },
-      ],
-    });
-  } else {
-    messages.push({ role: 'user', content: message });
-  }
-
-  // Choose model based on whether any message has an image
-  const hasImage = image || trimmedHistory.some((h: any) => h.image);
+  // Choose model and build AI params
+  const hasImage = !!image;
   const model = hasImage ? VISION_MODEL : TEXT_MODEL;
 
   try {
-    const stream = await c.env.AI.run(model as any, {
+    const aiParams: any = {
       messages,
       stream: true,
       max_tokens: 1024,
-      temperature: 0.7,
-    });
+    };
+
+    // For vision model: convert base64 data URL to number[] for the top-level `image` param
+    if (hasImage) {
+      const base64 = image.includes(',') ? image.split(',')[1] : image;
+      const binaryStr = atob(base64);
+      const imageBytes = new Uint8Array(binaryStr.length);
+      for (let i = 0; i < binaryStr.length; i++) {
+        imageBytes[i] = binaryStr.charCodeAt(i);
+      }
+      aiParams.image = Array.from(imageBytes);
+    } else {
+      aiParams.temperature = 0.7;
+    }
+
+    const stream = await c.env.AI.run(model as any, aiParams);
 
     return new Response(stream as ReadableStream, {
       headers: {
@@ -191,11 +182,11 @@ aiRoutes.post('/chat', async (c) => {
       },
     });
   } catch (err: any) {
-    const errorMsg = err?.message || '';
+    const errorMsg = String(err?.message || err || '');
+    console.error('AI error:', errorMsg);
     if (errorMsg.includes('rate limit') || errorMsg.includes('quota') || errorMsg.includes('limit')) {
       return c.json({ error: '今日 AI 使用量已達上限，請明天再試' }, 429);
     }
-    console.error('AI error:', err);
-    return c.json({ error: 'AI 服務暫時不可用，請稍後再試' }, 503);
+    return c.json({ error: 'AI 服務暫時不可用，請稍後再試 (' + errorMsg.slice(0, 100) + ')' }, 503);
   }
 });
