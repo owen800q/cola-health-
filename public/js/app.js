@@ -139,6 +139,13 @@ const app = createApp({
       sleepHours: 0, sleepCount: 0, sleepLongest: 0,
     });
     const recentItems = ref([]);
+    const lastFeedTime = ref(null);
+    const nextFeedStr = computed(() => {
+      if (!lastFeedTime.value) return '';
+      var interval = reminders.feed.interval_minutes || 180;
+      var nft = new Date(lastFeedTime.value.getTime() + interval * 60000);
+      return pad(nft.getHours()) + ':' + pad(nft.getMinutes());
+    });
 
     // Global saving lock
     const saving = ref(false);
@@ -504,6 +511,12 @@ const app = createApp({
         ]);
         homeStats.feedCount = feeds?.length || 0;
         homeStats.feedTotal = feeds?.reduce((s, f) => s + (f.amount_ml || 0), 0) || 0;
+        if (feeds?.length) {
+          var sorted = [...feeds].sort((a, b) => new Date(b.time) - new Date(a.time));
+          lastFeedTime.value = new Date(sorted[0].time);
+        } else {
+          lastFeedTime.value = null;
+        }
         homeStats.diaperTotal = diapers?.length || 0;
         homeStats.diaperWet = diapers?.filter(d => d.type === 'pee' || d.type === 'both').length || 0;
         homeStats.diaperDirty = diapers?.filter(d => d.type === 'poo' || d.type === 'both').length || 0;
@@ -586,7 +599,9 @@ const app = createApp({
           await API.createFeed(data);
         }
         hideLoading();
-        showToast(editingId.value ? '記錄已更新' : '餵奶記錄已儲存');
+        var nft = new Date(now.getTime() + (reminders.feed.interval_minutes || 180) * 60000);
+        var nftStr = pad(nft.getHours()) + ':' + pad(nft.getMinutes());
+        showToast(editingId.value ? '記錄已更新' : '餵奶記錄已儲存 · 下次約 ' + nftStr);
         localStorage.setItem('lastFeedAmount', feedAmount.value);
         feedNotes.value = '';
         editingId.value = null;
@@ -1184,7 +1199,7 @@ const app = createApp({
       // Baby
       baby, babyName, babyAge, babyBirthday, daysSinceBirth, avatarUrl, pickAvatar,
       // Home
-      homeStats, recentItems, viewDateStr, prevDay, nextDay,
+      homeStats, recentItems, nextFeedStr, viewDateStr, prevDay, nextDay,
       // Edit
       editingId, editingType, editFeed, editDiaper, editSleep, editTimelineItem, saving,
       // Feed
@@ -1252,6 +1267,10 @@ const app = createApp({
       <div class="si" @click="go(1)"><span class="sn">{{ homeStats.feedCount }}</span><span class="sl">餵奶次數</span></div>
       <div class="si" @click="go(2)"><span class="sn">{{ homeStats.diaperWet }}</span><span class="sl">小便</span></div>
       <div class="si" @click="go(3)"><span class="sn">{{ homeStats.sleepHours }}h</span><span class="sl">今日睡眠</span></div>
+    </div>
+    <div class="next-feed" v-if="nextFeedStr" @click="go(1)">
+      <svg><use href="#i-clock"/></svg>
+      <span>下次餵奶：<b>{{ nextFeedStr }}</b></span>
     </div>
     <div class="gd">
       <div class="gi" @click="openSub('af'); initTimes()"><div class="gi-ico" style="color:var(--blue)"><svg><use href="#i-plus"/></svg></div><span>記錄飲奶</span></div>
