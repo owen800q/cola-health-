@@ -50,9 +50,9 @@ body::after { content: ''; position: fixed; bottom: 0; left: 0; right: 0; height
 .gi span { font-size: 11px; color: var(--t2); }
 
 /* Next feed banner */
-.next-feed { display: flex; align-items: center; gap: 8px; margin: 0 16px 12px; padding: 10px 14px; background: linear-gradient(135deg, #EBF5FF, #F0E6FF); border-radius: 12px; font-size: 14px; color: var(--t1); cursor: pointer; }
+.next-feed { display: flex; align-items: center; gap: 8px; margin: 0 16px 12px; padding: 10px 14px; background: #E8F4FD; border: 1px solid rgba(16,174,255,0.12); border-radius: 8px; font-size: 14px; color: var(--t1); cursor: pointer; }
 .next-feed svg { width: 18px; height: 18px; color: var(--blue); flex-shrink: 0; }
-.next-feed b { color: var(--purple); }
+.next-feed b { color: var(--blue); }
 
 /* Section title */
 .st { padding: 14px 16px 6px; font-size: 14px; color: var(--t2); }
