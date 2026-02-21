@@ -140,11 +140,35 @@ const app = createApp({
     });
     const recentItems = ref([]);
     const lastFeedTime = ref(null);
-    const nextFeedStr = computed(() => {
-      if (!lastFeedTime.value) return '';
+    const now = ref(Date.now());
+    let _nowTimer = null;
+    const nextFeedTime = computed(() => {
+      if (!lastFeedTime.value) return null;
       var interval = reminders.feed.interval_minutes || 180;
-      var nft = new Date(lastFeedTime.value.getTime() + interval * 60000);
-      return pad(nft.getHours()) + ':' + pad(nft.getMinutes());
+      return new Date(lastFeedTime.value.getTime() + interval * 60000);
+    });
+    const nextFeedStr = computed(() => {
+      if (!nextFeedTime.value) return '';
+      return pad(nextFeedTime.value.getHours()) + ':' + pad(nextFeedTime.value.getMinutes());
+    });
+    const nextFeedMs = computed(() => {
+      if (!nextFeedTime.value) return 0;
+      return Math.max(0, nextFeedTime.value.getTime() - now.value);
+    });
+    const nextFeedProgress = computed(() => {
+      if (!lastFeedTime.value) return 0;
+      var interval = (reminders.feed.interval_minutes || 180) * 60000;
+      var elapsed = now.value - lastFeedTime.value.getTime();
+      return Math.min(100, Math.max(0, (elapsed / interval) * 100));
+    });
+    const nextFeedOverdue = computed(() => nextFeedMs.value <= 0 && !!lastFeedTime.value);
+    const lastFeedAgo = computed(() => {
+      if (!lastFeedTime.value) return '';
+      var diff = Math.floor((now.value - lastFeedTime.value.getTime()) / 60000);
+      if (diff < 1) return '剛剛';
+      if (diff < 60) return diff + ' 分鐘前';
+      var h = Math.floor(diff / 60), m = diff % 60;
+      return h + ' 小時' + (m > 0 ? ' ' + m + ' 分鐘' : '') + '前';
     });
 
     // Global saving lock
@@ -1164,6 +1188,7 @@ const app = createApp({
 
     // ===== LIFECYCLE =====
     onMounted(async () => {
+      _nowTimer = setInterval(() => { now.value = Date.now(); }, 1000);
       await loadBaby();
       // Load avatar from cloud if not cached locally
       if (!avatarUrl.value && store.baby && store.baby.avatar_url) {
@@ -1183,6 +1208,7 @@ const app = createApp({
 
     onUnmounted(() => {
       if (sleepTimer) clearInterval(sleepTimer);
+      if (_nowTimer) clearInterval(_nowTimer);
     });
 
     // Watch page changes to refresh data
@@ -1199,7 +1225,7 @@ const app = createApp({
       // Baby
       baby, babyName, babyAge, babyBirthday, daysSinceBirth, avatarUrl, pickAvatar,
       // Home
-      homeStats, recentItems, nextFeedStr, viewDateStr, prevDay, nextDay,
+      homeStats, recentItems, nextFeedStr, nextFeedMs, nextFeedProgress, nextFeedOverdue, lastFeedAgo, viewDateStr, prevDay, nextDay,
       // Edit
       editingId, editingType, editFeed, editDiaper, editSleep, editTimelineItem, saving,
       // Feed
@@ -1263,14 +1289,28 @@ const app = createApp({
       <div class="set-btn" @click="go(4)"><svg><use href="#i-gear"/></svg></div>
     </div>
     <div class="sc">
-      <div class="si" @click="go(1)"><span class="sn">{{ homeStats.feedTotal }}</span><span class="sl">今日奶量(ml)</span></div>
-      <div class="si" @click="go(1)"><span class="sn">{{ homeStats.feedCount }}</span><span class="sl">餵奶次數</span></div>
-      <div class="si" @click="go(2)"><span class="sn">{{ homeStats.diaperWet }}</span><span class="sl">小便</span></div>
-      <div class="si" @click="go(3)"><span class="sn">{{ homeStats.sleepHours }}h</span><span class="sl">今日睡眠</span></div>
-    </div>
-    <div class="next-feed" v-if="nextFeedStr" @click="go(1)">
-      <svg><use href="#i-clock"/></svg>
-      <span>下次餵奶：<b>{{ nextFeedStr }}</b></span>
+      <div class="sc-stats">
+        <div class="si" @click="go(1)"><span class="sn">{{ homeStats.feedTotal }}</span><span class="sl">今日奶量(ml)</span></div>
+        <div class="si" @click="go(1)"><span class="sn">{{ homeStats.feedCount }}</span><span class="sl">餵奶次數</span></div>
+        <div class="si" @click="go(2)"><span class="sn">{{ homeStats.diaperWet }}</span><span class="sl">小便</span></div>
+        <div class="si" @click="go(3)"><span class="sn">{{ homeStats.sleepHours }}h</span><span class="sl">今日睡眠</span></div>
+      </div>
+      <div class="nf-section" v-if="lastFeedAgo" @click="go(1)">
+        <div class="nf-row">
+          <div class="nf-left">
+            <div class="nf-icon" :class="{ overdue: nextFeedOverdue }"><svg><use href="#i-clock"/></svg></div>
+            <div class="nf-info">
+              <span class="nf-label">{{ nextFeedOverdue ? '已超時' : '下次餵奶' }}</span>
+              <span class="nf-sub">上次：{{ lastFeedAgo }}</span>
+            </div>
+          </div>
+          <div class="nf-right">
+            <span class="nf-time" :class="{ overdue: nextFeedOverdue }">{{ nextFeedStr }}</span>
+            <van-button size="mini" type="primary" round plain @click.stop="openSub('af'); initTimes()">記錄</van-button>
+          </div>
+        </div>
+        <van-progress :percentage="nextFeedProgress" :show-pivot="false" stroke-width="3" :color="nextFeedOverdue ? 'var(--red)' : 'var(--blue)'" track-color="rgba(0,0,0,0.04)" />
+      </div>
     </div>
     <div class="gd">
       <div class="gi" @click="openSub('af'); initTimes()"><div class="gi-ico" style="color:var(--blue)"><svg><use href="#i-plus"/></svg></div><span>記錄飲奶</span></div>
@@ -1747,6 +1787,7 @@ const app = createApp({
   `,
 });
 
+app.use(vant);
 app.mount('#app');
 
 /* ============================================================
