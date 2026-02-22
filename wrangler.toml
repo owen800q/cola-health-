@@ -1,0 +1,22 @@
+name = "baby-tracker"
+main = "worker/index.ts"
+compatibility_date = "2024-01-01"
+
+[site]
+bucket = "./public"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "baby-tracker-db"
+database_id = "3a398a37-964c-45c3-906f-cdf5f8ed6562"
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+[vars]
+VAPID_PUBLIC_KEY = "BJojp7Jn0dt0HSV50Bl-uvnuVsXFZ6ydKyw4gAlpbpvWAgPGXN4qzW_42JbJjcyH1i1a0x8NRfYADtkRNqz5RPg"
+VAPID_PRIVATE_KEY = "jDHvhOvfCWL_8SUzdPPiWpb0tRtxyRHpEMxwyqyjhwE"
+VAPID_SUBJECT = "mailto:admin@example.com"
+
+[ai]
+binding = "AI"

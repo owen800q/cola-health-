@@ -1,0 +1,26 @@
+{
+  "name": "可樂仔健康記錄",
+  "short_name": "可樂仔",
+  "description": "BB健康追蹤記錄 — 飲奶、換片、睡眠",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ededed",
+  "theme_color": "#10AEFF",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["health", "lifestyle"],
+  "lang": "zh-Hant-HK"
+}
