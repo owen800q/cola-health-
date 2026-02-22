@@ -32,7 +32,7 @@ timelineRoutes.get('/', async (c) => {
     db.prepare(feedQ).bind(...binds).all(),
     db.prepare(diaperQ).bind(...binds).all(),
     db.prepare(sleepQ).bind(...binds).all(),
-    db.prepare(tempQ).bind(...binds).all(),
+    db.prepare(tempQ).bind(...binds).all().catch(() => ({ results: [] })),
   ]);
 
   // Merge and sort by time DESC

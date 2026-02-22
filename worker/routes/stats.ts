@@ -48,7 +48,7 @@ statsRoutes.get('/', async (c) => {
       WHERE time >= date('now', '-' || ? || ' months')
       GROUP BY strftime('%Y-%m', time)
       ORDER BY month ASC
-    `).bind(months).all(),
+    `).bind(months).all().catch(() => ({ results: [] })),
   ]);
 
   return c.json({

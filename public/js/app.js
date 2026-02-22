@@ -548,7 +548,7 @@ const app = createApp({
           API.getDiapers(store.babyId, range),
           API.getSleeps(store.babyId, range),
           API.getTimeline(store.babyId, range),
-          API.getTemperatures(store.babyId, range),
+          API.getTemperatures(store.babyId, range).catch(function() { return []; }),
         ]);
         homeStats.feedCount = feeds?.length || 0;
         homeStats.feedTotal = feeds?.reduce((s, f) => s + (f.amount_ml || 0), 0) || 0;
@@ -633,7 +633,7 @@ const app = createApp({
       try { sleepHistory.value = await API.getSleeps(store.babyId, viewDayRange()) || []; } catch (e) { console.warn(e); }
     }
     async function loadTempHistory() {
-      try { tempHistory.value = await API.getTemperatures(store.babyId, viewDayRange()) || []; } catch (e) { console.warn(e); }
+      try { tempHistory.value = await API.getTemperatures(store.babyId, viewDayRange()) || []; } catch (e) { tempHistory.value = []; }
     }
 
     // ===== FEED ACTIONS =====

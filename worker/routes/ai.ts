@@ -168,14 +168,15 @@ aiRoutes.post('/chat', async (c) => {
       db.prepare(`SELECT COUNT(*) as count, COALESCE(SUM(amount_ml),0) as total_ml,
         COALESCE(ROUND(AVG(amount_ml),0),0) as avg_ml
         FROM feeds WHERE time >= date('now', '-7 days')`).first(),
-      dayFrom && dayTo
+      (dayFrom && dayTo
         ? db.prepare("SELECT time, temperature, method, fever, note FROM temperatures WHERE time >= ? AND time <= ? ORDER BY time DESC").bind(dayFrom, dayTo).all()
-        : db.prepare("SELECT time, temperature, method, fever, note FROM temperatures WHERE date(time) = date('now') ORDER BY time DESC").all(),
+        : db.prepare("SELECT time, temperature, method, fever, note FROM temperatures WHERE date(time) = date('now') ORDER BY time DESC").all()
+      ).catch(() => ({ results: [] })),
     ]);
 
   const systemPrompt = buildSystemPrompt(
     baby, todayFeeds.results, todayDiapers.results, todaySleeps.results,
-    latestGrowth, vaccines.results, recentFeedStats, todayTemps.results,
+    latestGrowth, vaccines.results, recentFeedStats, todayTemps.results || [],
   );
 
   // Build messages array (text-only — images go via top-level `image` param)

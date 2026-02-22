@@ -84,18 +84,20 @@ exportRoutes.get('/pdf', async (c) => {
   }
 
   if (sections.includes('temperature')) {
-    const temps = await db.prepare(`
-      SELECT
-        COUNT(*) as count,
-        ROUND(MAX(temperature), 1) as max_temp,
-        ROUND(MIN(temperature), 1) as min_temp,
-        ROUND(AVG(temperature), 1) as avg_temp,
-        SUM(CASE WHEN fever = 1 THEN 1 ELSE 0 END) as fever_count
-      FROM temperatures WHERE date(time) BETWEEN ? AND ?
-    `).bind(from, to).first<any>();
-    if (temps && temps.count > 0) {
-      tempSummary = temps;
-    }
+    try {
+      const temps = await db.prepare(`
+        SELECT
+          COUNT(*) as count,
+          ROUND(MAX(temperature), 1) as max_temp,
+          ROUND(MIN(temperature), 1) as min_temp,
+          ROUND(AVG(temperature), 1) as avg_temp,
+          SUM(CASE WHEN fever = 1 THEN 1 ELSE 0 END) as fever_count
+        FROM temperatures WHERE date(time) BETWEEN ? AND ?
+      `).bind(from, to).first<any>();
+      if (temps && temps.count > 0) {
+        tempSummary = temps;
+      }
+    } catch (e) { /* temperatures table may not exist yet */ }
   }
 
   // Generate HTML-based PDF
@@ -184,16 +186,18 @@ exportRoutes.get('/preview', async (c) => {
   }
 
   if (sections.includes('temperature')) {
-    const temps = await db.prepare(`
-      SELECT
-        COUNT(*) as count,
-        ROUND(MAX(temperature), 1) as max_temp,
-        ROUND(MIN(temperature), 1) as min_temp,
-        ROUND(AVG(temperature), 1) as avg_temp,
-        SUM(CASE WHEN fever = 1 THEN 1 ELSE 0 END) as fever_count
-      FROM temperatures WHERE date(time) BETWEEN ? AND ?
-    `).bind(from, to).first<any>();
-    result.temperature = (temps && temps.count > 0) ? temps : null;
+    try {
+      const temps = await db.prepare(`
+        SELECT
+          COUNT(*) as count,
+          ROUND(MAX(temperature), 1) as max_temp,
+          ROUND(MIN(temperature), 1) as min_temp,
+          ROUND(AVG(temperature), 1) as avg_temp,
+          SUM(CASE WHEN fever = 1 THEN 1 ELSE 0 END) as fever_count
+        FROM temperatures WHERE date(time) BETWEEN ? AND ?
+      `).bind(from, to).first<any>();
+      result.temperature = (temps && temps.count > 0) ? temps : null;
+    } catch (e) { result.temperature = null; }
   }
 
   return c.json(result);
