@@ -1206,9 +1206,22 @@ const app = createApp({
       loadReminders();
     });
 
+    // Auto-refresh when app returns from background (like WeChat onShow)
+    function onVisibilityChange() {
+      if (document.visibilityState === 'visible') {
+        var p = currentPage.value;
+        if (p === 0) loadHomeData();
+        else if (p === 1) loadFeedHistory();
+        else if (p === 2) loadDiaperHistory();
+        else if (p === 3) loadSleepHistory();
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
     onUnmounted(() => {
       if (sleepTimer) clearInterval(sleepTimer);
       if (_nowTimer) clearInterval(_nowTimer);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     });
 
     // Watch page changes to refresh data
