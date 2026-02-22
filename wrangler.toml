@@ -1,4 +1,4 @@
-name = "baby-tracker"
+name = "cola-health"
 main = "worker/index.ts"
 compatibility_date = "2024-01-01"
 
