@@ -62,6 +62,17 @@ CREATE TABLE IF NOT EXISTS vaccines (
   created_at TEXT DEFAULT (datetime('now'))
 );
 
+-- Temperature records
+CREATE TABLE IF NOT EXISTS temperatures (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  time TEXT NOT NULL,
+  temperature REAL NOT NULL,
+  method TEXT NOT NULL CHECK(method IN ('ear','forehead','armpit','oral','rectal')) DEFAULT 'ear',
+  fever INTEGER DEFAULT 0,
+  note TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
 -- Growth records
 CREATE TABLE IF NOT EXISTS growth (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -122,6 +133,7 @@ CREATE INDEX IF NOT EXISTS idx_diapers_time ON diapers(time DESC);
 CREATE INDEX IF NOT EXISTS idx_sleeps_start ON sleeps(start_time DESC);
 CREATE INDEX IF NOT EXISTS idx_vaccines_status ON vaccines(status);
 CREATE INDEX IF NOT EXISTS idx_growth_date ON growth(date DESC);
+CREATE INDEX IF NOT EXISTS idx_temperatures_time ON temperatures(time DESC);
 
 -- Seed default baby profile
 INSERT OR IGNORE INTO baby (id, name, gender, birth_date, birth_weight, birth_height)

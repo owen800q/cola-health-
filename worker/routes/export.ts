@@ -8,7 +8,7 @@ exportRoutes.get('/pdf', async (c) => {
   const db = c.env.DB;
   const from = c.req.query('from');
   const to = c.req.query('to');
-  const sections = (c.req.query('sections') || 'feed,diaper,sleep,growth').split(',');
+  const sections = (c.req.query('sections') || 'feed,diaper,sleep,growth,temperature').split(',');
 
   if (!from || !to) {
     return c.json({ error: 'from and to dates are required' }, 400);
@@ -28,6 +28,7 @@ exportRoutes.get('/pdf', async (c) => {
   let diaperSummary = null;
   let sleepSummary = null;
   let growthData = null;
+  let tempSummary = null;
 
   if (sections.includes('feed')) {
     const feeds = await db.prepare(`
@@ -82,12 +83,27 @@ exportRoutes.get('/pdf', async (c) => {
     growthData = g;
   }
 
+  if (sections.includes('temperature')) {
+    const temps = await db.prepare(`
+      SELECT
+        COUNT(*) as count,
+        ROUND(MAX(temperature), 1) as max_temp,
+        ROUND(MIN(temperature), 1) as min_temp,
+        ROUND(AVG(temperature), 1) as avg_temp,
+        SUM(CASE WHEN fever = 1 THEN 1 ELSE 0 END) as fever_count
+      FROM temperatures WHERE date(time) BETWEEN ? AND ?
+    `).bind(from, to).first<any>();
+    if (temps && temps.count > 0) {
+      tempSummary = temps;
+    }
+  }
+
   // Generate HTML-based PDF
   const html = generatePdfHtml({
     babyName: baby.name,
     from, to,
     ageDaysStart, ageDaysEnd,
-    feedSummary, diaperSummary, sleepSummary, growthData,
+    feedSummary, diaperSummary, sleepSummary, growthData, tempSummary,
   });
 
   return c.html(html, 200, {
@@ -100,7 +116,7 @@ exportRoutes.get('/preview', async (c) => {
   const db = c.env.DB;
   const from = c.req.query('from');
   const to = c.req.query('to');
-  const sections = (c.req.query('sections') || 'feed,diaper,sleep,growth').split(',');
+  const sections = (c.req.query('sections') || 'feed,diaper,sleep,growth,temperature').split(',');
 
   if (!from || !to) {
     return c.json({ error: 'from and to dates are required' }, 400);
@@ -167,6 +183,19 @@ exportRoutes.get('/preview', async (c) => {
     result.growth = g || null;
   }
 
+  if (sections.includes('temperature')) {
+    const temps = await db.prepare(`
+      SELECT
+        COUNT(*) as count,
+        ROUND(MAX(temperature), 1) as max_temp,
+        ROUND(MIN(temperature), 1) as min_temp,
+        ROUND(AVG(temperature), 1) as avg_temp,
+        SUM(CASE WHEN fever = 1 THEN 1 ELSE 0 END) as fever_count
+      FROM temperatures WHERE date(time) BETWEEN ? AND ?
+    `).bind(from, to).first<any>();
+    result.temperature = (temps && temps.count > 0) ? temps : null;
+  }
+
   return c.json(result);
 });
 
@@ -174,7 +203,7 @@ function generatePdfHtml(data: {
   babyName: string;
   from: string; to: string;
   ageDaysStart: number; ageDaysEnd: number;
-  feedSummary: any; diaperSummary: any; sleepSummary: any; growthData: any;
+  feedSummary: any; diaperSummary: any; sleepSummary: any; growthData: any; tempSummary: any;
 }): string {
   const formatDate = (d: string) => {
     const date = new Date(d);
@@ -218,6 +247,18 @@ function generatePdfHtml(data: {
       ${data.growthData.weight ? `<div class="row"><span>體重</span><span>${data.growthData.weight} kg</span></div>` : ''}
       ${data.growthData.height ? `<div class="row"><span>身高</span><span>${data.growthData.height} cm</span></div>` : ''}
       ${data.growthData.head_circumference ? `<div class="row"><span>頭圍</span><span>${data.growthData.head_circumference} cm</span></div>` : ''}
+    </div>`;
+  }
+
+  if (data.tempSummary) {
+    sections += `
+    <div class="section">
+      <h2>體溫記錄</h2>
+      <div class="row"><span>量度次數</span><span>${data.tempSummary.count} 次</span></div>
+      <div class="row"><span>最高體溫</span><span>${data.tempSummary.max_temp}°C</span></div>
+      <div class="row"><span>最低體溫</span><span>${data.tempSummary.min_temp}°C</span></div>
+      <div class="row"><span>平均體溫</span><span>${data.tempSummary.avg_temp}°C</span></div>
+      ${data.tempSummary.fever_count > 0 ? `<div class="row"><span style="color:#F43530">發燒次數</span><span style="color:#F43530;font-weight:700">${data.tempSummary.fever_count} 次</span></div>` : '<div class="row"><span>發燒次數</span><span>0 次</span></div>'}
     </div>`;
   }
 

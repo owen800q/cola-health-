@@ -9,7 +9,7 @@ statsRoutes.get('/', async (c) => {
   const db = c.env.DB;
   const months = parseInt(c.req.query('months') || '6');
 
-  const [feedStats, diaperStats, growthData] = await Promise.all([
+  const [feedStats, diaperStats, growthData, tempStats] = await Promise.all([
     db.prepare(`
       SELECT
         strftime('%Y-%m', time) as month,
@@ -36,11 +36,25 @@ statsRoutes.get('/', async (c) => {
       ORDER BY month ASC
     `).bind(months).all(),
     db.prepare('SELECT * FROM growth ORDER BY date ASC').all(),
+    db.prepare(`
+      SELECT
+        strftime('%Y-%m', time) as month,
+        COUNT(*) as total_records,
+        ROUND(MAX(temperature), 1) as max_temp,
+        ROUND(MIN(temperature), 1) as min_temp,
+        ROUND(AVG(temperature), 1) as avg_temp,
+        SUM(CASE WHEN fever = 1 THEN 1 ELSE 0 END) as fever_count
+      FROM temperatures
+      WHERE time >= date('now', '-' || ? || ' months')
+      GROUP BY strftime('%Y-%m', time)
+      ORDER BY month ASC
+    `).bind(months).all(),
   ]);
 
   return c.json({
     feeds: feedStats.results,
     diapers: diaperStats.results,
     growth: growthData.results,
+    temperatures: tempStats.results,
   });
 });
