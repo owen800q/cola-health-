@@ -1,9 +1,19 @@
 // Cron handler: check reminders and send push notifications
 import type { Bindings } from './index';
 import { sendPush, type PushSub, type VapidKeys } from './lib/webpush';
+import { scrapeAndSync, shouldSync } from './lib/scraper';
 
 export async function handleScheduled(env: Bindings): Promise<void> {
   const db = env.DB;
+
+  // Daily baby care rooms data sync
+  try {
+    if (await shouldSync(db)) {
+      await scrapeAndSync(db);
+    }
+  } catch (e) {
+    console.error('Baby rooms sync error:', e);
+  }
 
   // Ensure notification_log table exists (dedup tracking)
   await db.prepare('CREATE TABLE IF NOT EXISTS notification_log (reminder_type TEXT PRIMARY KEY, last_notified_at TEXT NOT NULL)').run();

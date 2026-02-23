@@ -1186,6 +1186,60 @@ const app = createApp({
       } catch { showToast('檢查失敗'); }
     }
 
+    // ===== BABY CARE ROOMS =====
+    const mbRooms = ref([]);
+    const mbTotal = ref(0);
+    const mbSearch = ref('');
+    const mbDistrict = ref('全部');
+    const mbType = ref('全部');
+    const mbLoading = ref(false);
+    const mbDistricts = ref([]);
+    const mbTypes = ['全部','商場','交通','政府','醫院','其他'];
+    let _mbDebounce = null;
+
+    async function loadMbRooms() {
+      mbLoading.value = true;
+      try {
+        const params = {};
+        if (mbDistrict.value !== '全部') params.district = mbDistrict.value;
+        if (mbType.value !== '全部') params.type = mbType.value;
+        if (mbSearch.value) params.q = mbSearch.value;
+        const data = await API.getBabyRooms(params);
+        mbRooms.value = data.rooms || [];
+        mbTotal.value = data.total || 0;
+      } catch (e) {
+        console.warn('Failed to load rooms:', e);
+      } finally {
+        mbLoading.value = false;
+      }
+    }
+
+    async function loadMbDistricts() {
+      if (mbDistricts.value.length) return;
+      try {
+        mbDistricts.value = await API.getBabyRoomDistricts();
+      } catch (e) {
+        console.warn('Failed to load districts:', e);
+      }
+    }
+
+    function openMbRooms() {
+      openSub('mb');
+      loadMbRooms();
+      loadMbDistricts();
+    }
+
+    // Debounced watch for search filters
+    watch([mbSearch, mbDistrict, mbType], () => {
+      if (_mbDebounce) clearTimeout(_mbDebounce);
+      _mbDebounce = setTimeout(() => loadMbRooms(), 300);
+    });
+
+    function mbFacilities(room) {
+      try { return JSON.parse(room.facilities || '[]'); }
+      catch { return []; }
+    }
+
     // ===== LIFECYCLE =====
     onMounted(async () => {
       _nowTimer = setInterval(() => { now.value = Date.now(); }, 1000);
@@ -1274,6 +1328,9 @@ const app = createApp({
       reminders, toggleReminder, updateReminderInterval,
       // Push
       pushEnabled, enablePush, testPush, checkReminders,
+      // Baby care rooms
+      mbRooms, mbTotal, mbSearch, mbDistrict, mbType, mbLoading,
+      mbDistricts, mbTypes, openMbRooms, mbFacilities,
     };
   },
   template: `
@@ -1336,6 +1393,7 @@ const app = createApp({
       <div class="gi" @click="openSub('rm')"><div class="gi-ico" style="color:var(--orange)"><svg><use href="#i-bell"/></svg></div><span>提醒設定</span></div>
       <div class="gi" @click="openSub('bt'); loadBottleSlots()"><div class="gi-ico" style="color:var(--teal)"><svg><use href="#i-bottle"/></svg></div><span>奶瓶組裝</span></div>
       <div class="gi" @click="openSub('ai')"><div class="gi-ico" style="color:var(--purple)"><svg><use href="#i-chat"/></svg></div><span>問 AI</span></div>
+      <div class="gi" @click="openMbRooms()"><div class="gi-ico" style="color:var(--green)"><svg><use href="#i-mappin"/></svg></div><span>母嬰室</span></div>
     </div>
     <div class="st">今日記錄</div>
     <div class="cs" v-if="recentItems.length">
@@ -1465,6 +1523,7 @@ const app = createApp({
       <div class="cl" @click="openSub('he')"><span class="ci" style="color:var(--green)"><svg><use href="#i-shield"/></svg></span><div class="cb"><div class="ct">疫苗接種計劃</div><div class="cd">香港兒童免疫接種計劃</div></div><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
       <div class="cl" @click="openSub('hs')"><span class="ci" style="color:var(--blue)"><svg><use href="#i-health"/></svg></span><div class="cb"><div class="ct">幼兒健康及發展綜合計劃</div></div><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
       <div class="cl" @click="openSub('g6')"><span class="ci" style="color:var(--red)"><svg><use href="#i-warn"/></svg></span><div class="cb"><div class="ct">蠶豆病須知</div></div><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
+      <div class="cl" @click="openMbRooms()"><span class="ci" style="color:var(--green)"><svg><use href="#i-mappin"/></svg></span><div class="cb"><div class="ct">母嬰室搜尋</div><div class="cd">全港母嬰室及育嬰間位置</div></div><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
     </div>
     <div class="st">資料</div>
     <div class="cs">
@@ -1610,6 +1669,54 @@ const app = createApp({
     <div class="cs">
       <div class="cl"><span class="ci" style="color:var(--warn)"><svg><use href="#i-alert"/></svg></span><div class="cb"><div class="ct">聽力普查（耳聲發射）</div><div class="cd">四個月以下嬰兒</div></div><div class="cr row"><span class="tg tg-o">待安排</span></div></div>
       <div class="cl"><span class="ci" style="color:var(--t3)"><svg><use href="#i-alert"/></svg></span><div class="cb"><div class="ct">學前視力普查</div><div class="cd">四歲或以上</div></div></div>
+    </div>
+    <div style="height:32px"></div>
+  </div>
+
+  <!-- ===== SUB: BABY CARE ROOMS ===== -->
+  <div class="sub" :class="{active: activeSub === 'mb'}" @touchstart="subSwipeStart" @touchmove="subSwipeMove" @touchend="subSwipeEnd">
+    <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">母嬰室搜尋</span><div class="nb-ph"></div></div>
+    <div class="mb-search">
+      <input type="text" v-model="mbSearch" placeholder="搜尋母嬰室名稱或地址..." class="mb-input">
+    </div>
+    <div class="mb-filters">
+      <div class="mb-filter-row">
+        <span class="mb-fl">類型</span>
+        <div class="mb-tags">
+          <span v-for="t in mbTypes" :key="t" class="mb-tag" :class="{active: mbType === t}" @click="mbType = t">{{ t }}</span>
+        </div>
+      </div>
+      <div class="mb-filter-row">
+        <span class="mb-fl">地區</span>
+        <div class="mb-tags">
+          <span class="mb-tag" :class="{active: mbDistrict === '全部'}" @click="mbDistrict = '全部'">全部</span>
+          <span v-for="d in mbDistricts" :key="d.district" class="mb-tag" :class="{active: mbDistrict === d.district}" @click="mbDistrict = d.district">{{ d.district }}（{{ d.count }}）</span>
+        </div>
+      </div>
+    </div>
+    <div class="st">搜尋結果（{{ mbTotal }}）</div>
+    <div v-if="mbLoading" style="text-align:center;padding:32px;color:var(--t2)">載入中...</div>
+    <div class="cs" v-else-if="mbRooms.length">
+      <div class="cl" v-for="room in mbRooms" :key="room.id">
+        <div class="ri" style="background:#E8F8F0;color:var(--green)"><svg><use href="#i-mappin"/></svg></div>
+        <div class="cb">
+          <div class="ct">{{ room.name }}</div>
+          <div class="cd">{{ room.district }} · {{ room.type }}</div>
+          <div class="cd" v-if="room.address">{{ room.address }}</div>
+          <div class="cd" v-if="room.hours">{{ room.hours }}</div>
+          <div class="mb-fc" v-if="mbFacilities(room).length">
+            <span class="mb-tag active" v-for="f in mbFacilities(room)" :key="f">{{ f }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div v-else style="text-align:center;padding:40px 16px;color:var(--t3)">
+      <svg style="width:48px;height:48px;margin-bottom:8px"><use href="#i-mappin"/></svg>
+      <p>找不到符合條件的母嬰室</p>
+    </div>
+    <div class="nt nc" style="margin-top:8px">
+      <span class="nn" style="color:var(--blue)"><svg><use href="#i-info"/></svg></span>
+      <div class="nb2">資料來源：BBGAGA.com 及衞生署。數據每日自動更新。如有遺漏，歡迎回報。</div>
     </div>
     <div style="height:32px"></div>
   </div>
