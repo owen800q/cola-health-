@@ -1,8 +1,15 @@
 import { Hono } from 'hono';
 import type { Bindings } from '../index';
 import { scrapeAndSync } from '../lib/scraper';
+import { ensureRoomsTable } from '../lib/seed-rooms';
 
 export const babyRoomsRoutes = new Hono<{ Bindings: Bindings }>();
+
+// Auto-initialize table and seed data on first access
+babyRoomsRoutes.use('/*', async (c, next) => {
+  await ensureRoomsTable(c.env.DB);
+  await next();
+});
 
 // GET /api/babyrooms — search/list baby care rooms
 babyRoomsRoutes.get('/', async (c) => {
