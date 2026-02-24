@@ -158,10 +158,6 @@ async function handleGeminiChat(
 
   const geminiResp = await client.chat(fullPrompt, imageBytes, 'image.jpg', 'image/jpeg');
 
-  if (!geminiResp.text) {
-    throw new Error('Gemini returned empty response');
-  }
-
   // Convert to SSE format that the frontend expects
   // Simulate streaming by sending the text in chunks
   const text = geminiResp.text;
@@ -308,8 +304,11 @@ aiRoutes.post('/chat', async (c) => {
     if (errorMsg.includes('rate limit') || errorMsg.includes('quota') || errorMsg.includes('limit')) {
       return c.json({ error: '今日 AI 使用量已達上限，請明天再試' }, 429);
     }
-    if (errorMsg.includes('SNlM0e') || errorMsg.includes('Cookies')) {
+    if (errorMsg.includes('SNlM0e') || errorMsg.includes('Cookies') || errorMsg.includes('expired') || errorMsg.includes('login')) {
       return c.json({ error: 'Google 驗證已過期，請重新設定 Cookies' }, 401);
+    }
+    if (errorMsg.includes('parsing failed')) {
+      return c.json({ error: 'Gemini 回應解析失敗，請重試 (' + errorMsg.slice(0, 200) + ')' }, 502);
     }
     return c.json({ error: 'AI 服務暫時不可用，請稍後再試 (' + errorMsg.slice(0, 100) + ')' }, 503);
   }

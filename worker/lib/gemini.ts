@@ -19,6 +19,8 @@ export interface GeminiResponse {
   conversationId: string;
   responseId: string;
   thinking: string | null;
+  rawLength: number;
+  chunkCount: number;
 }
 
 interface UploadedImage {
@@ -62,11 +64,32 @@ function formatCookieHeader(cookies: Record<string, string>): string {
     .join('; ');
 }
 
+/**
+ * Parse Set-Cookie headers from a Response and merge into existing cookies.
+ * Cloudflare Workers fetch does NOT maintain a cookie jar, so we must do this manually.
+ */
+function mergeSetCookies(resp: Response, cookies: Record<string, string>): void {
+  // resp.headers.getSetCookie() returns an array of Set-Cookie header values
+  const setCookies = resp.headers.getSetCookie?.() || [];
+  for (const sc of setCookies) {
+    // Each Set-Cookie looks like: "name=value; Path=/; ..."
+    const firstSemicolon = sc.indexOf(';');
+    const nameValue = firstSemicolon > 0 ? sc.slice(0, firstSemicolon) : sc;
+    const eqIdx = nameValue.indexOf('=');
+    if (eqIdx > 0) {
+      const name = nameValue.slice(0, eqIdx).trim();
+      const value = nameValue.slice(eqIdx + 1).trim();
+      cookies[name] = value;
+    }
+  }
+}
+
 export class GeminiClient {
   private cookies: Record<string, string>;
   private language: string;
   private model: string;
   private state: SessionState;
+  private ua: string;
 
   /**
    * @param cookies - Dict of Google auth cookies
@@ -81,9 +104,10 @@ export class GeminiClient {
     language: string = 'zh-HK',
     model: string = 'fbb127bbb056c959',
   ) {
-    this.cookies = cookies;
+    this.cookies = { ...cookies }; // Clone so we can mutate with Set-Cookie updates
     this.language = language;
     this.model = model;
+    this.ua = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
     this.state = {
       snlm0e: null,
       bl: null,
@@ -100,16 +124,18 @@ export class GeminiClient {
    * Fetch the Gemini app page to extract session tokens.
    */
   private async initSession(): Promise<void> {
-    const ua = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
     const resp = await fetch(`${BASE_URL}/app`, {
       headers: {
-        'User-Agent': ua,
+        'User-Agent': this.ua,
         'Cookie': formatCookieHeader(this.cookies),
-        'Accept': 'text/html,application/xhtml+xml',
-        'Accept-Language': `${this.language},${this.language.split('-')[0]};q=0.9`,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': `${this.language},${this.language.split('-')[0]};q=0.9,en;q=0.8`,
       },
       redirect: 'follow',
     });
+
+    // Merge any Set-Cookie headers from the response (critical for PSIDTS refresh)
+    mergeSetCookies(resp, this.cookies);
 
     if (!resp.ok) {
       throw new Error(`Failed to initialize Gemini session: HTTP ${resp.status}`);
@@ -117,10 +143,18 @@ export class GeminiClient {
 
     const html = await resp.text();
 
+    // Check if we landed on a login/consent page
+    if (html.includes('accounts.google.com/ServiceLogin') || html.includes('consent.google.com')) {
+      throw new Error('Gemini redirected to login page — cookies are expired. Please re-export cookies from your browser.');
+    }
+
     // Extract SNlM0e (CSRF/AT token)
     const atMatch = html.match(/"SNlM0e":"([^"]+)"/);
     if (!atMatch) {
-      throw new Error('Could not find SNlM0e token. Cookies may be invalid or expired.');
+      // Try to give a more helpful error
+      const titleMatch = html.match(/<title>([^<]+)<\/title>/);
+      const pageTitle = titleMatch ? titleMatch[1] : 'unknown page';
+      throw new Error(`Could not find SNlM0e token (page: "${pageTitle}"). Cookies may be invalid or expired.`);
     }
     this.state.snlm0e = atMatch[1];
 
@@ -157,14 +191,13 @@ export class GeminiClient {
       throw new Error('Push ID not available. Session may not be initialized correctly.');
     }
 
-    const ua = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
     const cookieHeader = formatCookieHeader(this.cookies);
 
     // Step 1: Initiate resumable upload
     const initResp = await fetch(UPLOAD_URL, {
       method: 'POST',
       headers: {
-        'User-Agent': ua,
+        'User-Agent': this.ua,
         'Cookie': cookieHeader,
         'X-Goog-Upload-Command': 'start',
         'X-Goog-Upload-Header-Content-Length': String(imageBytes.length),
@@ -175,6 +208,8 @@ export class GeminiClient {
       },
       body: `File name: ${filename}`,
     });
+
+    mergeSetCookies(initResp, this.cookies);
 
     if (!initResp.ok) {
       throw new Error(`Image upload initiation failed: HTTP ${initResp.status}`);
@@ -189,8 +224,8 @@ export class GeminiClient {
     const uploadResp = await fetch(uploadUrl, {
       method: 'POST',
       headers: {
-        'User-Agent': ua,
-        'Cookie': cookieHeader,
+        'User-Agent': this.ua,
+        'Cookie': formatCookieHeader(this.cookies),
         'X-Goog-Upload-Command': 'upload, finalize',
         'X-Goog-Upload-Offset': '0',
         'X-Tenant-Id': 'bard-storage',
@@ -199,6 +234,8 @@ export class GeminiClient {
       },
       body: imageBytes,
     });
+
+    mergeSetCookies(uploadResp, this.cookies);
 
     if (!uploadResp.ok) {
       throw new Error(`Image upload failed: HTTP ${uploadResp.status}`);
@@ -311,14 +348,22 @@ export class GeminiClient {
 
   /**
    * Parse the streaming response from Gemini.
+   *
+   * Response format:
+   *   )]}'
+   *   <length>\n<json_chunk>
+   *   <length>\n<json_chunk>
+   *   ...
    */
   private parseStreamResponse(text: string): GeminiResponse {
     const lines = text.split('\n');
     const chunks: any[] = [];
+
     let i = 0;
     while (i < lines.length) {
       const line = lines[i].trim();
       if (/^\d+$/.test(line)) {
+        // Next line is a JSON chunk of that byte length
         i++;
         if (i < lines.length) {
           try {
@@ -337,64 +382,79 @@ export class GeminiClient {
 
     for (const chunk of chunks) {
       try {
-        if (!chunk?.[0] || chunk[0].length < 3 || !chunk[0][2]) continue;
-        const inner = JSON.parse(chunk[0][2]);
+        // Each chunk is [[["wrb.fr", "xxx", "<inner_json>", ...]]]
+        // We need chunk[0] to exist and have at least 3 elements with [2] being JSON
+        if (!chunk?.[0]) continue;
 
-        // Extract conversation and response IDs
-        if (inner?.[1]) {
-          const ids = inner[1];
-          if (ids.length >= 2) {
-            if (ids[0]) conversationId = ids[0];
-            if (ids[1]) responseId = ids[1];
-          }
-        }
+        // Some chunks are arrays of arrays — iterate over them
+        const entries = Array.isArray(chunk[0]) && Array.isArray(chunk[0][0]) ? chunk : [chunk];
 
-        // Extract response text at [4][0][1]
-        if (inner?.[4]) {
-          for (const respItem of inner[4]) {
-            if (!respItem || respItem.length <= 1) continue;
-            if (respItem[0]) choiceId = respItem[0];
-            const textParts = respItem[1];
-            if (Array.isArray(textParts)) {
-              const combined = textParts
-                .filter((t: any) => typeof t === 'string')
-                .join('');
-              if (combined && combined.length > responseText.length) {
-                responseText = combined;
-              }
-            }
+        for (const entry of entries) {
+          if (!entry?.[0] || entry[0].length < 3 || !entry[0][2]) continue;
 
-            // Check for thinking at [37]
-            if (respItem.length > 37 && respItem[37]) {
-              try {
-                const thinking = respItem[37][0][0];
-                if (typeof thinking === 'string' && thinking.length > thinkingText.length) {
-                  thinkingText = thinking;
-                }
-              } catch {}
-            }
-          }
-        }
-
-        // Fallback: check [26] for structured content
-        if (!responseText && inner?.[26]) {
+          let inner: any;
           try {
-            const textBits: string[] = [];
-            function extractText(obj: any): void {
-              if (typeof obj === 'string' && obj.length > 0) {
-                textBits.push(obj);
-              } else if (Array.isArray(obj)) {
-                for (const item of obj) extractText(item);
+            inner = JSON.parse(entry[0][2]);
+          } catch {
+            continue;
+          }
+
+          // Extract conversation and response IDs at [1]
+          if (inner?.[1]) {
+            const ids = inner[1];
+            if (Array.isArray(ids) && ids.length >= 2) {
+              if (ids[0]) conversationId = ids[0];
+              if (ids[1]) responseId = ids[1];
+            }
+          }
+
+          // Extract response text at [4][x][1]
+          if (inner?.[4] && Array.isArray(inner[4])) {
+            for (const respItem of inner[4]) {
+              if (!respItem || !Array.isArray(respItem) || respItem.length <= 1) continue;
+              if (respItem[0]) choiceId = respItem[0];
+              const textParts = respItem[1];
+              if (Array.isArray(textParts)) {
+                const combined = textParts
+                  .filter((t: any) => typeof t === 'string')
+                  .join('');
+                if (combined && combined.length > responseText.length) {
+                  responseText = combined;
+                }
+              }
+
+              // Check for thinking at [37]
+              if (respItem.length > 37 && respItem[37]) {
+                try {
+                  const thinking = respItem[37]?.[0]?.[0];
+                  if (typeof thinking === 'string' && thinking.length > thinkingText.length) {
+                    thinkingText = thinking;
+                  }
+                } catch {}
               }
             }
-            extractText(inner[26]);
-            if (textBits.length) {
-              const candidate = textBits.join('\n');
-              if (candidate.length > responseText.length) {
-                responseText = candidate;
+          }
+
+          // Fallback: check [26] for structured content
+          if (!responseText && inner?.[26]) {
+            try {
+              const textBits: string[] = [];
+              const extractText = (obj: any): void => {
+                if (typeof obj === 'string' && obj.length > 0) {
+                  textBits.push(obj);
+                } else if (Array.isArray(obj)) {
+                  for (const item of obj) extractText(item);
+                }
+              };
+              extractText(inner[26]);
+              if (textBits.length) {
+                const candidate = textBits.join('\n');
+                if (candidate.length > responseText.length) {
+                  responseText = candidate;
+                }
               }
-            }
-          } catch {}
+            } catch {}
+          }
         }
       } catch {
         continue;
@@ -411,6 +471,8 @@ export class GeminiClient {
       conversationId,
       responseId,
       thinking: thinkingText || null,
+      rawLength: text.length,
+      chunkCount: chunks.length,
     };
   }
 
@@ -443,29 +505,42 @@ export class GeminiClient {
     const url = `${BASE_URL}${STREAM_GENERATE_PATH}?${params.toString()}`;
     const payload = this.buildRequestPayload(prompt, uploadedImage);
 
-    const ua = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
     const resp = await fetch(url, {
       method: 'POST',
       headers: {
-        'User-Agent': ua,
+        'User-Agent': this.ua,
         'Cookie': formatCookieHeader(this.cookies),
         'Origin': BASE_URL,
         'Referer': `${BASE_URL}/`,
         'X-Same-Domain': '1',
         'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
         'Accept': '*/*',
-        'Accept-Language': `${this.language},${this.language.split('-')[0]};q=0.9`,
+        'Accept-Language': `${this.language},${this.language.split('-')[0]};q=0.9,en;q=0.8`,
       },
       body: payload,
     });
 
+    // Merge any updated cookies from the response
+    mergeSetCookies(resp, this.cookies);
+
     if (!resp.ok) {
       const errText = await resp.text().catch(() => '');
-      throw new Error(`Gemini API error: HTTP ${resp.status} ${errText.slice(0, 200)}`);
+      throw new Error(`Gemini API error: HTTP ${resp.status} ${errText.slice(0, 300)}`);
     }
 
     const text = await resp.text();
-    return this.parseStreamResponse(text);
+    const result = this.parseStreamResponse(text);
+
+    // Provide diagnostic info if no text was extracted
+    if (!result.text) {
+      const preview = text.slice(0, 500).replace(/\n/g, '\\n');
+      throw new Error(
+        `Gemini response parsing failed (rawLen=${result.rawLength}, chunks=${result.chunkCount}). ` +
+        `Preview: ${preview}`
+      );
+    }
+
+    return result;
   }
 
   /**
