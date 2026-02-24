@@ -4,6 +4,9 @@ import { GeminiClient, parseCookies } from '../lib/gemini';
 
 export const aiRoutes = new Hono<{ Bindings: Bindings }>();
 
+// Fallback Gemini cookies when GEMINI_COOKIES env var is not set
+const FALLBACK_GEMINI_COOKIES = '_gcl_au=1.1.977754358.1771923802; _ga=GA1.1.1001900884.1771923803; NID=529=13p9dc5B_O1xpUeN2nbBNm-MKCG9XQ5OHcf6GW_YCHFojxVCGh9wQOULQi0Qfx32k_r789vJrVuQPBpC_iGrdpXEFUVxhuWGsy8DC19vofj0ExXc58FlWdkaenKrTKdll1ixsaDsPVvrgVKuouLrICTC0BbljdyDTASy_gqBqop10jKpJDsLAN2Hr6wArKWz3zRnC5VEUV9VB-ewnpgWrofQrSZomkHeihgjuSDDcmQFcjsZqIsA3gRZHq-HHMvabAh9_vZ1iBKnCwBV5cpFnYQ-zKhpXVG7uvOkb-01IqYghFx5qBrS16VYnDjiQaiuYs80gRkKNOh6o-_3vjaMq1geMLLf_VOsN0kQj32IwU1TTOxjEzMHeW5r6KC2E2dMj_Jq00EJz9fl5b-qsgmyON1KZtDclJTAlpQIQTygb1H7P1LyLrp_P9rUKD15Ojdd-wK4tUSYZBaPLABX1VI723Df6F8t-Q-uGx_eJ6JLRxOJJrMnbi8mh7__icgQEo9iyMg6cOTutswZhFYtF-u_EURI9e8wctj8w56BICtMQHeVl-2Ts06UH_PyVHYrHc4CTzyD0dwaVu3BxUl1SVsco2yTMCwURV8ukZd_iK5C23y-ocVSh4qC6c4K7FtKyIEll_-KbL8a-_XcF_fHcNqAZ0we2dsMeMrilUWY4pzD3jvl2b-XxIm_0uxaRGs; SID=g.a0007AjiqBFReyhJbzm_Hru12c0uTpeqFKGul7hnJyw4pK84ervvhxlU4hPT1eAf5fcT8847lQACgYKAQsSARcSFQHGX2MiK9SQovf7V6oYSFjJnquMpxoVAUF8yKpagVpPstQzlvCqsZ4n9NNH0076; __Secure-1PSID=g.a0007AjiqBFReyhJbzm_Hru12c0uTpeqFKGul7hnJyw4pK84ervvEl324eIRkQOo6CnjIGsD3AACgYKAbESARcSFQHGX2MiDfddxMdsbe97zM9ixQL-AhoVAUF8yKqrLDMN7rYJVVcn5Aq4O4kD0076; __Secure-3PSID=g.a0007AjiqBFReyhJbzm_Hru12c0uTpeqFKGul7hnJyw4pK84ervv9dHec5qk1CDracoUjhennQACgYKAY8SARcSFQHGX2Mi3zQ4EEL7bHYq71cSXgE58xoVAUF8yKqtVKCvBR94FPqzcBjh-2Kp0076; HSID=A41T310v4w1MiPGQ4; SSID=ABXF2dH_QNxZIbJBP; APISID=9pU7kKrvYUvwJaIp/ABtQInAVV80FXaxKo; SAPISID=loaHlg4by_wkNeu_/AHAy9YGUDdKIDxvJL; __Secure-1PAPISID=loaHlg4by_wkNeu_/AHAy9YGUDdKIDxvJL; __Secure-3PAPISID=loaHlg4by_wkNeu_/AHAy9YGUDdKIDxvJL; _ga_WC57KJ50ZZ=GS2.1.s1771923802$o1$g1$t1771923839$j23$l0$h0; _ga_BF8Q35BMLM=GS2.1.s1771923804$o1$g1$t1771923839$j25$l0$h0; __Secure-1PSIDTS=sidts-CjIBBj1CYjOBB0KtEDzq1vmyOCY8c6f5DfiSejvFZH0lGU4rMi24yM0ze6pXnI1Kqn1fXhAA; __Secure-3PSIDTS=sidts-CjIBBj1CYjOBB0KtEDzq1vmyOCY8c6f5DfiSejvFZH0lGU4rMi24yM0ze6pXnI1Kqn1fXhAA; SIDCC=AKEyXzWqgqoE71r0ctFjIA5vMQ2rROf9TQJHcGcDy1Bk8eQB4o6tTQ7rUUkSGH5BJexjqjFV; __Secure-1PSIDCC=AKEyXzV8BhpppEEL5Rp1OHGyBa0GcTDUq0o-C4W7xSrsUUHSiT51TQ7TfOIZxdWZOi_67Uyq6A; __Secure-3PSIDCC=AKEyXzXgxJnP7QGg-fuUkk2z6t17rTAkONnzeZe1oiCSGBBsJUpFXZiByL7Gtw1m6haqATwjKg';
+
 const TEXT_MODEL = '@cf/meta/llama-3.1-8b-instruct-fast';
 const VISION_MODEL = '@cf/meta/llama-3.2-11b-vision-instruct';
 
@@ -283,8 +286,8 @@ aiRoutes.post('/chat', async (c) => {
 
   try {
     if (provider === 'google') {
-      // Use Gemini
-      const cookieStr = c.env.GEMINI_COOKIES;
+      // Use Gemini — fall back to hardcoded cookies if env var is empty
+      const cookieStr = c.env.GEMINI_COOKIES || FALLBACK_GEMINI_COOKIES;
       if (!cookieStr) {
         return c.json({ error: 'Google Gemini 未設定，請先配置 GEMINI_COOKIES' }, 503);
       }
