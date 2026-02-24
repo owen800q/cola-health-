@@ -105,6 +105,14 @@
     addBottlePhoto: (slotId, data) => request('/bottles/' + slotId + '/photos', { method: 'POST', body: data }),
     deleteBottlePhoto: (slotId, photoId) => request('/bottles/' + slotId + '/photos/' + photoId, { method: 'DELETE' }),
 
+    // ---- Baby Care Rooms ----
+    getBabyRooms: (params) => {
+      const q = new URLSearchParams(params).toString();
+      return request('/babyrooms' + (q ? '?' + q : ''));
+    },
+    getBabyRoomDistricts: () => request('/babyrooms/districts'),
+    refreshBabyRooms: () => request('/babyrooms/refresh', { method: 'POST' }),
+
     // ---- AI Chat (streaming) ----
     chatAI: async function (message, history, image, dayRange, onChunk, onDone, onError) {
       try {
