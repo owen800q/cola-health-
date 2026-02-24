@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { Bindings } from '../index';
+import { GeminiClient, parseCookies } from '../lib/gemini';
 
 export const aiRoutes = new Hono<{ Bindings: Bindings }>();
 
@@ -119,6 +120,125 @@ ${vaccineInfo}
 9. 回答中不要使用 markdown 格式標記`;
 }
 
+/**
+ * Handle chat via Google Gemini (reverse-engineered web API).
+ * Returns SSE-formatted response to keep frontend compatible.
+ */
+async function handleGeminiChat(
+  cookieStr: string,
+  systemPrompt: string,
+  message: string,
+  history: any[],
+  image: string | null,
+): Promise<Response> {
+  const cookies = parseCookies(cookieStr);
+  const client = new GeminiClient(cookies, 'zh-HK');
+
+  // Build the full prompt: system context + conversation history + user message
+  // Gemini doesn't have a system/user role distinction like OpenAI, so we combine
+  const historyText = history
+    .map((h: any) => h.role === 'user' ? `用戶：${h.content}` : `助手：${h.content}`)
+    .join('\n\n');
+
+  const fullPrompt = `${systemPrompt}\n\n---\n\n${historyText ? historyText + '\n\n' : ''}用戶：${message}`;
+
+  // Handle image if present
+  let imageBytes: Uint8Array | undefined;
+  if (image) {
+    const base64 = image.includes(',') ? image.split(',')[1] : image;
+    const binaryStr = atob(base64);
+    imageBytes = new Uint8Array(binaryStr.length);
+    for (let i = 0; i < binaryStr.length; i++) {
+      imageBytes[i] = binaryStr.charCodeAt(i);
+    }
+  }
+
+  const geminiResp = await client.chat(fullPrompt, imageBytes, 'image.jpg', 'image/jpeg');
+
+  if (!geminiResp.text) {
+    throw new Error('Gemini returned empty response');
+  }
+
+  // Convert to SSE format that the frontend expects
+  // Simulate streaming by sending the text in chunks
+  const text = geminiResp.text;
+  const chunkSize = 4; // characters per chunk for a smooth typing effect
+  const encoder = new TextEncoder();
+
+  const stream = new ReadableStream({
+    start(controller) {
+      let offset = 0;
+      function pushChunk() {
+        if (offset >= text.length) {
+          controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+          controller.close();
+          return;
+        }
+        const end = Math.min(offset + chunkSize, text.length);
+        const chunk = text.slice(offset, end);
+        const sseData = JSON.stringify({ response: chunk });
+        controller.enqueue(encoder.encode(`data: ${sseData}\n\n`));
+        offset = end;
+        // Use a microtask to avoid blocking
+        pushChunk();
+      }
+      pushChunk();
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+    },
+  });
+}
+
+/**
+ * Handle chat via Cloudflare AI (original implementation).
+ */
+async function handleCloudflareChat(
+  ai: any,
+  messages: any[],
+  image: string | null,
+): Promise<Response> {
+  const hasImage = !!image;
+  const model = hasImage ? VISION_MODEL : TEXT_MODEL;
+
+  if (hasImage) {
+    await ensureVisionLicense(ai);
+  }
+
+  const aiParams: any = {
+    messages,
+    stream: true,
+    max_tokens: 1024,
+  };
+
+  if (hasImage) {
+    const base64 = image!.includes(',') ? image!.split(',')[1] : image!;
+    const binaryStr = atob(base64);
+    const imageBytes = new Uint8Array(binaryStr.length);
+    for (let i = 0; i < binaryStr.length; i++) {
+      imageBytes[i] = binaryStr.charCodeAt(i);
+    }
+    aiParams.image = Array.from(imageBytes);
+  } else {
+    aiParams.temperature = 0.7;
+  }
+
+  const stream = await ai.run(model as any, aiParams);
+
+  return new Response(stream as ReadableStream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+    },
+  });
+}
+
 // POST /api/ai/chat
 aiRoutes.post('/chat', async (c) => {
   const db = c.env.DB;
@@ -128,6 +248,7 @@ aiRoutes.post('/chat', async (c) => {
   const image = body.image || null; // base64 data URL
   const dayFrom = body.from; // local day start ISO from frontend
   const dayTo = body.to;     // local day end ISO from frontend
+  const provider = body.provider || 'google'; // 'google' or 'cloudflare'
 
   if (!message || typeof message !== 'string' || message.trim().length === 0) {
     return c.json({ error: '請輸入問題' }, 400);
@@ -136,7 +257,6 @@ aiRoutes.post('/chat', async (c) => {
   const trimmedHistory = history.slice(-6);
 
   // Gather context from D1 in parallel
-  // Use local-timezone day range from frontend for accurate "today" queries
   const [baby, todayFeeds, todayDiapers, todaySleeps, latestGrowth, vaccines, recentFeedStats] =
     await Promise.all([
       db.prepare('SELECT * FROM baby WHERE id = 1').first(),
@@ -161,57 +281,32 @@ aiRoutes.post('/chat', async (c) => {
     latestGrowth, vaccines.results, recentFeedStats,
   );
 
-  // Build messages array (text-only — images go via top-level `image` param)
-  const messages: any[] = [{ role: 'system', content: systemPrompt }];
-
-  for (const h of trimmedHistory) {
-    messages.push({ role: h.role, content: h.content });
-  }
-  messages.push({ role: 'user', content: message });
-
-  // Choose model and build AI params
-  const hasImage = !!image;
-  const model = hasImage ? VISION_MODEL : TEXT_MODEL;
-
   try {
-    // Ensure Meta license is agreed for vision model
-    if (hasImage) {
-      await ensureVisionLicense(c.env.AI);
-    }
-
-    const aiParams: any = {
-      messages,
-      stream: true,
-      max_tokens: 1024,
-    };
-
-    // For vision model: convert base64 data URL to number[] for the top-level `image` param
-    if (hasImage) {
-      const base64 = image.includes(',') ? image.split(',')[1] : image;
-      const binaryStr = atob(base64);
-      const imageBytes = new Uint8Array(binaryStr.length);
-      for (let i = 0; i < binaryStr.length; i++) {
-        imageBytes[i] = binaryStr.charCodeAt(i);
+    if (provider === 'google') {
+      // Use Gemini
+      const cookieStr = c.env.GEMINI_COOKIES;
+      if (!cookieStr) {
+        return c.json({ error: 'Google Gemini 未設定，請先配置 GEMINI_COOKIES' }, 503);
       }
-      aiParams.image = Array.from(imageBytes);
+      return await handleGeminiChat(cookieStr, systemPrompt, message, trimmedHistory, image);
     } else {
-      aiParams.temperature = 0.7;
+      // Use Cloudflare AI (original)
+      const messages: any[] = [{ role: 'system', content: systemPrompt }];
+      for (const h of trimmedHistory) {
+        messages.push({ role: h.role, content: h.content });
+      }
+      messages.push({ role: 'user', content: message });
+
+      return await handleCloudflareChat(c.env.AI, messages, image);
     }
-
-    const stream = await c.env.AI.run(model as any, aiParams);
-
-    return new Response(stream as ReadableStream, {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-      },
-    });
   } catch (err: any) {
     const errorMsg = String(err?.message || err || '');
     console.error('AI error:', errorMsg);
     if (errorMsg.includes('rate limit') || errorMsg.includes('quota') || errorMsg.includes('limit')) {
       return c.json({ error: '今日 AI 使用量已達上限，請明天再試' }, 429);
+    }
+    if (errorMsg.includes('SNlM0e') || errorMsg.includes('Cookies')) {
+      return c.json({ error: 'Google 驗證已過期，請重新設定 Cookies' }, 401);
     }
     return c.json({ error: 'AI 服務暫時不可用，請稍後再試 (' + errorMsg.slice(0, 100) + ')' }, 503);
   }

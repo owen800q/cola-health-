@@ -322,6 +322,20 @@ label.fi { cursor: pointer; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ===== AI Chat ===== */
+.chat-provider-bar {
+  display: flex; gap: 6px; padding: 8px 16px;
+  background: var(--card); border-bottom: 1px solid var(--t5);
+  flex-shrink: 0;
+}
+.chat-provider-btn {
+  flex: 1; padding: 6px 0; border-radius: 8px; border: 1px solid var(--t4);
+  background: #f7f7f7; color: var(--t2); font-size: 13px; font-family: inherit;
+  cursor: pointer; transition: all 0.2s;
+}
+.chat-provider-btn.active {
+  background: var(--purple); color: #fff; border-color: var(--purple); font-weight: 600;
+}
+.chat-provider-btn:active { opacity: 0.8; }
 .chat-body {
   flex: 1;
   min-height: 0;

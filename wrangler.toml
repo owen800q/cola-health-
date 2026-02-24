@@ -17,6 +17,7 @@ crons = ["*/5 * * * *", "0 3 * * *"]
 VAPID_PUBLIC_KEY = "BJojp7Jn0dt0HSV50Bl-uvnuVsXFZ6ydKyw4gAlpbpvWAgPGXN4qzW_42JbJjcyH1i1a0x8NRfYADtkRNqz5RPg"
 VAPID_PRIVATE_KEY = "jDHvhOvfCWL_8SUzdPPiWpb0tRtxyRHpEMxwyqyjhwE"
 VAPID_SUBJECT = "mailto:admin@example.com"
+GEMINI_COOKIES = ""
 
 [ai]
 binding = "AI"
