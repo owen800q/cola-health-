@@ -3,6 +3,14 @@
  *
  * Interacts with gemini.google.com using the same internal API endpoints
  * that the browser uses. Requires Google authentication cookies.
+ *
+ * Because Cloudflare Worker datacenter IPs get blocked by Google (sorry/index
+ * CAPTCHA), all requests are routed through a proxy when proxyUrl is set.
+ * The proxy format is: POST {proxyUrl}
+ *   Headers:  X-Target-Url: <original URL>
+ *             (all other headers forwarded as-is)
+ *   Body:     forwarded as-is
+ * The proxy must forward the request to the target URL and return the response.
  */
 
 const USER_AGENTS = [
@@ -66,13 +74,10 @@ function formatCookieHeader(cookies: Record<string, string>): string {
 
 /**
  * Parse Set-Cookie headers from a Response and merge into existing cookies.
- * Cloudflare Workers fetch does NOT maintain a cookie jar, so we must do this manually.
  */
 function mergeSetCookies(resp: Response, cookies: Record<string, string>): void {
-  // resp.headers.getSetCookie() returns an array of Set-Cookie header values
   const setCookies = resp.headers.getSetCookie?.() || [];
   for (const sc of setCookies) {
-    // Each Set-Cookie looks like: "name=value; Path=/; ..."
     const firstSemicolon = sc.indexOf(';');
     const nameValue = firstSemicolon > 0 ? sc.slice(0, firstSemicolon) : sc;
     const eqIdx = nameValue.indexOf('=');
@@ -90,24 +95,26 @@ export class GeminiClient {
   private model: string;
   private state: SessionState;
   private ua: string;
+  private proxyUrl: string | null;
 
   /**
    * @param cookies - Dict of Google auth cookies
-   * @param language - Language code (default: "zh-HK" for Hong Kong Traditional Chinese)
-   * @param model - Model identifier:
-   *   - "fbb127bbb056c959" (Fast - default)
-   *   - "5bf011840784117a" (Thinking)
-   *   - "9d8ca3786ebdfbea" (Pro)
+   * @param language - Language code
+   * @param model - Model identifier
+   * @param proxyUrl - Proxy endpoint URL. All Google requests will be routed
+   *                   through this proxy to avoid datacenter IP blocks.
    */
   constructor(
     cookies: Record<string, string>,
     language: string = 'zh-HK',
     model: string = 'fbb127bbb056c959',
+    proxyUrl: string | null = null,
   ) {
-    this.cookies = { ...cookies }; // Clone so we can mutate with Set-Cookie updates
+    this.cookies = { ...cookies };
     this.language = language;
     this.model = model;
     this.ua = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+    this.proxyUrl = proxyUrl ? proxyUrl.replace(/\/+$/, '') : null;
     this.state = {
       snlm0e: null,
       bl: null,
@@ -121,20 +128,42 @@ export class GeminiClient {
   }
 
   /**
+   * Send a fetch request, routing through proxy if configured.
+   * The proxy receives the real target URL in the X-Target-Url header
+   * and forwards the request with all original headers/body.
+   */
+  private async proxyFetch(url: string, init: RequestInit): Promise<Response> {
+    if (!this.proxyUrl) {
+      return fetch(url, { ...init, redirect: 'follow' });
+    }
+
+    // Route through proxy: POST to proxy with the real target in a header
+    const headers = new Headers(init.headers as HeadersInit);
+    headers.set('X-Target-Url', url);
+    headers.set('X-Target-Method', init.method || 'GET');
+
+    return fetch(this.proxyUrl, {
+      method: 'POST',
+      headers,
+      body: init.body,
+      redirect: 'follow',
+    });
+  }
+
+  /**
    * Fetch the Gemini app page to extract session tokens.
    */
   private async initSession(): Promise<void> {
-    const resp = await fetch(`${BASE_URL}/app`, {
+    const resp = await this.proxyFetch(`${BASE_URL}/app`, {
+      method: 'GET',
       headers: {
         'User-Agent': this.ua,
         'Cookie': formatCookieHeader(this.cookies),
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         'Accept-Language': `${this.language},${this.language.split('-')[0]};q=0.9,en;q=0.8`,
       },
-      redirect: 'follow',
     });
 
-    // Merge any Set-Cookie headers from the response (critical for PSIDTS refresh)
     mergeSetCookies(resp, this.cookies);
 
     if (!resp.ok) {
@@ -142,6 +171,11 @@ export class GeminiClient {
     }
 
     const html = await resp.text();
+
+    // Check for Google's IP-block / CAPTCHA page
+    if (html.includes('google.com/sorry') || html.includes('/sorry/index')) {
+      throw new Error('Google blocked this IP (sorry/CAPTCHA). Configure GEMINI_PROXY with a proxy that has a clean residential IP.');
+    }
 
     // Check if we landed on a login/consent page
     if (html.includes('accounts.google.com/ServiceLogin') || html.includes('consent.google.com')) {
@@ -151,7 +185,6 @@ export class GeminiClient {
     // Extract SNlM0e (CSRF/AT token)
     const atMatch = html.match(/"SNlM0e":"([^"]+)"/);
     if (!atMatch) {
-      // Try to give a more helpful error
       const titleMatch = html.match(/<title>([^<]+)<\/title>/);
       const pageTitle = titleMatch ? titleMatch[1] : 'unknown page';
       throw new Error(`Could not find SNlM0e token (page: "${pageTitle}"). Cookies may be invalid or expired.`);
@@ -194,7 +227,7 @@ export class GeminiClient {
     const cookieHeader = formatCookieHeader(this.cookies);
 
     // Step 1: Initiate resumable upload
-    const initResp = await fetch(UPLOAD_URL, {
+    const initResp = await this.proxyFetch(UPLOAD_URL, {
       method: 'POST',
       headers: {
         'User-Agent': this.ua,
@@ -221,7 +254,7 @@ export class GeminiClient {
     }
 
     // Step 2: Upload the actual file bytes
-    const uploadResp = await fetch(uploadUrl, {
+    const uploadResp = await this.proxyFetch(uploadUrl, {
       method: 'POST',
       headers: {
         'User-Agent': this.ua,
@@ -348,12 +381,6 @@ export class GeminiClient {
 
   /**
    * Parse the streaming response from Gemini.
-   *
-   * Response format:
-   *   )]}'
-   *   <length>\n<json_chunk>
-   *   <length>\n<json_chunk>
-   *   ...
    */
   private parseStreamResponse(text: string): GeminiResponse {
     const lines = text.split('\n');
@@ -363,7 +390,6 @@ export class GeminiClient {
     while (i < lines.length) {
       const line = lines[i].trim();
       if (/^\d+$/.test(line)) {
-        // Next line is a JSON chunk of that byte length
         i++;
         if (i < lines.length) {
           try {
@@ -382,11 +408,8 @@ export class GeminiClient {
 
     for (const chunk of chunks) {
       try {
-        // Each chunk is [[["wrb.fr", "xxx", "<inner_json>", ...]]]
-        // We need chunk[0] to exist and have at least 3 elements with [2] being JSON
         if (!chunk?.[0]) continue;
 
-        // Some chunks are arrays of arrays — iterate over them
         const entries = Array.isArray(chunk[0]) && Array.isArray(chunk[0][0]) ? chunk : [chunk];
 
         for (const entry of entries) {
@@ -399,7 +422,6 @@ export class GeminiClient {
             continue;
           }
 
-          // Extract conversation and response IDs at [1]
           if (inner?.[1]) {
             const ids = inner[1];
             if (Array.isArray(ids) && ids.length >= 2) {
@@ -408,7 +430,6 @@ export class GeminiClient {
             }
           }
 
-          // Extract response text at [4][x][1]
           if (inner?.[4] && Array.isArray(inner[4])) {
             for (const respItem of inner[4]) {
               if (!respItem || !Array.isArray(respItem) || respItem.length <= 1) continue;
@@ -423,7 +444,6 @@ export class GeminiClient {
                 }
               }
 
-              // Check for thinking at [37]
               if (respItem.length > 37 && respItem[37]) {
                 try {
                   const thinking = respItem[37]?.[0]?.[0];
@@ -435,7 +455,6 @@ export class GeminiClient {
             }
           }
 
-          // Fallback: check [26] for structured content
           if (!responseText && inner?.[26]) {
             try {
               const textBits: string[] = [];
@@ -461,7 +480,6 @@ export class GeminiClient {
       }
     }
 
-    // Update conversation state for follow-up messages
     this.state.conversationId = conversationId;
     this.state.responseId = responseId;
     this.state.choiceId = choiceId;
@@ -482,7 +500,6 @@ export class GeminiClient {
   async chat(prompt: string, imageBytes?: Uint8Array, imageFilename?: string, imageMimeType?: string): Promise<GeminiResponse> {
     await this.ensureSession();
 
-    // Handle image upload if provided
     let uploadedImage: UploadedImage | undefined;
     if (imageBytes) {
       uploadedImage = await this.uploadImage(
@@ -505,7 +522,7 @@ export class GeminiClient {
     const url = `${BASE_URL}${STREAM_GENERATE_PATH}?${params.toString()}`;
     const payload = this.buildRequestPayload(prompt, uploadedImage);
 
-    const resp = await fetch(url, {
+    const resp = await this.proxyFetch(url, {
       method: 'POST',
       headers: {
         'User-Agent': this.ua,
@@ -520,7 +537,6 @@ export class GeminiClient {
       body: payload,
     });
 
-    // Merge any updated cookies from the response
     mergeSetCookies(resp, this.cookies);
 
     if (!resp.ok) {
@@ -531,7 +547,6 @@ export class GeminiClient {
     const text = await resp.text();
     const result = this.parseStreamResponse(text);
 
-    // Provide diagnostic info if no text was extracted
     if (!result.text) {
       const preview = text.slice(0, 500).replace(/\n/g, '\\n');
       throw new Error(
@@ -543,18 +558,12 @@ export class GeminiClient {
     return result;
   }
 
-  /**
-   * Start a new conversation (reset conversation state).
-   */
   newConversation(): void {
     this.state.conversationId = '';
     this.state.responseId = '';
     this.state.choiceId = '';
   }
 
-  /**
-   * Force re-initialization of the session.
-   */
   resetSession(): void {
     this.state.snlm0e = null;
     this.state.bl = null;

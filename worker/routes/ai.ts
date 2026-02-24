@@ -129,13 +129,14 @@ ${vaccineInfo}
  */
 async function handleGeminiChat(
   cookieStr: string,
+  proxyUrl: string | null,
   systemPrompt: string,
   message: string,
   history: any[],
   image: string | null,
 ): Promise<Response> {
   const cookies = parseCookies(cookieStr);
-  const client = new GeminiClient(cookies, 'zh-HK');
+  const client = new GeminiClient(cookies, 'zh-HK', 'fbb127bbb056c959', proxyUrl);
 
   // Build the full prompt: system context + conversation history + user message
   // Gemini doesn't have a system/user role distinction like OpenAI, so we combine
@@ -287,7 +288,8 @@ aiRoutes.post('/chat', async (c) => {
       if (!cookieStr) {
         return c.json({ error: 'Google Gemini 未設定，請先配置 GEMINI_COOKIES' }, 503);
       }
-      return await handleGeminiChat(cookieStr, systemPrompt, message, trimmedHistory, image);
+      const proxyUrl = c.env.GEMINI_PROXY || null;
+      return await handleGeminiChat(cookieStr, proxyUrl, systemPrompt, message, trimmedHistory, image);
     } else {
       // Use Cloudflare AI (original)
       const messages: any[] = [{ role: 'system', content: systemPrompt }];
@@ -303,6 +305,9 @@ aiRoutes.post('/chat', async (c) => {
     console.error('AI error:', errorMsg);
     if (errorMsg.includes('rate limit') || errorMsg.includes('quota') || errorMsg.includes('limit')) {
       return c.json({ error: '今日 AI 使用量已達上限，請明天再試' }, 429);
+    }
+    if (errorMsg.includes('sorry') || errorMsg.includes('CAPTCHA') || errorMsg.includes('blocked this IP') || errorMsg.includes('Too many redirects')) {
+      return c.json({ error: 'Google 封鎖咗呢個 IP，請設定 GEMINI_PROXY 環境變數指向一個有乾淨 IP 嘅代理' }, 403);
     }
     if (errorMsg.includes('SNlM0e') || errorMsg.includes('Cookies') || errorMsg.includes('expired') || errorMsg.includes('login')) {
       return c.json({ error: 'Google 驗證已過期，請重新設定 Cookies' }, 401);

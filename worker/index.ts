@@ -25,6 +25,7 @@ export type Bindings = {
   VAPID_PRIVATE_KEY: string;
   VAPID_SUBJECT: string;
   GEMINI_COOKIES: string;
+  GEMINI_PROXY: string;
 };
 
 const app = new Hono<{ Bindings: Bindings }>();
