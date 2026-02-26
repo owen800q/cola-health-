@@ -124,13 +124,12 @@ ${vaccineInfo}
 }
 
 /**
- * Handle chat via Google Gemini.
+ * Handle chat via Google Gemini (reverse-engineered web API).
  *
- * When GEMINI_PROXY is set, the full Gemini client runs on Vercel Edge
- * (to avoid Google blocking Cloudflare IPs). The worker just relays the
- * request and streams the SSE response back to the frontend.
- *
- * When GEMINI_PROXY is not set, the Gemini client runs locally.
+ * When GEMINI_PROXY is set, the GeminiClient routes all HTTP requests
+ * through the Vercel proxy to avoid Google blocking Cloudflare IPs.
+ * The Gemini client logic (session init, payload building, response parsing)
+ * still runs here on the CF Worker.
  */
 async function handleGeminiChat(
   cookieStr: string,
@@ -140,46 +139,14 @@ async function handleGeminiChat(
   history: any[],
   image: string | null,
 ): Promise<Response> {
-  // Build the full prompt (shared by both paths)
+  const cookies = parseCookies(cookieStr);
+  const client = new GeminiClient(cookies, 'zh-HK', 'fbb127bbb056c959', proxyUrl);
+
   const historyText = history
     .map((h: any) => h.role === 'user' ? `用戶：${h.content}` : `助手：${h.content}`)
     .join('\n\n');
 
   const fullPrompt = `${systemPrompt}\n\n---\n\n${historyText ? historyText + '\n\n' : ''}用戶：${message}`;
-
-  // ── Remote path: call Vercel Edge Function ──
-  if (proxyUrl) {
-    const vercelUrl = proxyUrl.replace(/\/+$/, '') + '/gemini';
-    const resp = await fetch(vercelUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        cookies: cookieStr,
-        prompt: fullPrompt,
-        image: image || undefined,
-      }),
-    });
-
-    if (!resp.ok) {
-      const errBody = await resp.text().catch(() => '');
-      let errMsg: string;
-      try { errMsg = JSON.parse(errBody).error; } catch { errMsg = errBody; }
-      throw new Error(errMsg || `Vercel proxy returned HTTP ${resp.status}`);
-    }
-
-    // Stream the SSE response straight through to the frontend
-    return new Response(resp.body, {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-      },
-    });
-  }
-
-  // ── Local path: run Gemini client in-worker ──
-  const cookies = parseCookies(cookieStr);
-  const client = new GeminiClient(cookies, 'zh-HK', 'fbb127bbb056c959');
 
   let imageBytes: Uint8Array | undefined;
   if (image) {

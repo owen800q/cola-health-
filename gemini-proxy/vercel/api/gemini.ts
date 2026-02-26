@@ -147,27 +147,33 @@ class GeminiClient {
 
     const html = await resp.text();
 
+    // Diagnostic: capture page title and final URL for debugging
+    const titleMatch = html.match(/<title>([^<]+)<\/title>/);
+    const pageTitle = titleMatch ? titleMatch[1].trim() : "unknown";
+    const finalUrl = resp.url || "unknown";
+
     if (html.includes("google.com/sorry") || html.includes("/sorry/index")) {
       throw new Error(
-        "Google blocked this IP (sorry/CAPTCHA). Vercel edge IP may also be blocked.",
+        `Google blocked this IP (sorry/CAPTCHA). Page: "${pageTitle}", URL: ${finalUrl}`,
       );
     }
 
-    if (
-      html.includes("accounts.google.com/ServiceLogin") ||
-      html.includes("consent.google.com")
-    ) {
+    if (html.includes("accounts.google.com/ServiceLogin")) {
       throw new Error(
-        "Gemini redirected to login page — cookies are expired. Please re-export cookies from your browser.",
+        `Gemini redirected to login page (ServiceLogin). Page: "${pageTitle}", URL: ${finalUrl}. Cookies may be expired.`,
+      );
+    }
+
+    if (html.includes("consent.google.com")) {
+      throw new Error(
+        `Google consent page detected. Page: "${pageTitle}", URL: ${finalUrl}. This is a region/consent issue, not expired cookies.`,
       );
     }
 
     const atMatch = html.match(/"SNlM0e":"([^"]+)"/);
     if (!atMatch) {
-      const titleMatch = html.match(/<title>([^<]+)<\/title>/);
-      const pageTitle = titleMatch ? titleMatch[1] : "unknown page";
       throw new Error(
-        `Could not find SNlM0e token (page: "${pageTitle}"). Cookies may be invalid or expired.`,
+        `Could not find SNlM0e token (page: "${pageTitle}", URL: ${finalUrl}, htmlLen: ${html.length}). Preview: ${html.slice(0, 300).replace(/\n/g, " ")}`,
       );
     }
     this.state.snlm0e = atMatch[1];
