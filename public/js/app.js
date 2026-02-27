@@ -271,6 +271,38 @@ const app = createApp({
       return name;
     }
 
+    // Vaccine edit
+    const editVaccine = ref(null);
+    const vaccineEditDate = ref('');
+    const vaccineEditLocation = ref('');
+
+    function openVaccineEdit(v) {
+      editVaccine.value = v;
+      const today = new Date();
+      vaccineEditDate.value = v.actual_date || today.getFullYear() + '-' + pad(today.getMonth()+1) + '-' + pad(today.getDate());
+      vaccineEditLocation.value = v.location || '';
+      openSub('ve');
+    }
+
+    async function saveVaccineEdit() {
+      if (!editVaccine.value || saving.value) return;
+      saving.value = true;
+      showLoading('儲存中...');
+      try {
+        await API.markVaccine(editVaccine.value.id, {
+          actual_date: vaccineEditDate.value,
+          status: 'done',
+          location: vaccineEditLocation.value || null,
+        });
+        hideLoading();
+        showToast('已標記為已完成');
+        editVaccine.value = null;
+        closeSub();
+        loadVaccines();
+      } catch (e) { hideLoading(); showToast('儲存失敗'); }
+      finally { saving.value = false; }
+    }
+
     // ===== BOTTLE ASSEMBLY =====
     const bottleSlots = ref([]);
     const bottlePhotoZoom = ref(null);
@@ -1309,6 +1341,7 @@ const app = createApp({
       sleepSummaryData,
       // Vaccines
       vaccines, vaccineGroups, vaccineDesc, vaccineName, vaccineStatusCls, vaccineStatusText, vaccineIcon, vaccineIconColor,
+      editVaccine, vaccineEditDate, vaccineEditLocation, openVaccineEdit, saveVaccineEdit,
       // Bottle Assembly
       bottleSlots, bottlePhotoZoom, loadBottleSlots, addBottleSlot, removeBottleSlot,
       takeBottlePhoto, pickBottlePhoto, removeBottlePhoto, fmtTimeAgo,
@@ -1639,15 +1672,29 @@ const app = createApp({
     <template v-for="group in vaccineGroups" :key="group.label">
       <div class="st">{{ group.label }}</div>
       <div class="cs">
-        <div class="cl" v-for="v in group.items" :key="v.id">
+        <div class="cl" v-for="v in group.items" :key="v.id" @click="openVaccineEdit(v)">
           <span class="ci" :style="vaccineIconColor(v)"><svg><use :href="vaccineIcon(v)"/></svg></span>
           <div class="cb"><div class="ct">{{ vaccineName(v) }}</div><div class="cd">{{ vaccineDesc(v) }}</div></div>
-          <div class="cr row"><span class="tg" :class="vaccineStatusCls(v)">{{ vaccineStatusText(v) }}</span></div>
+          <div class="cr row"><span class="tg" :class="vaccineStatusCls(v)">{{ vaccineStatusText(v) }}</span><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
         </div>
       </div>
     </template>
     <div class="nt ni"><span class="nn" style="color:var(--warn)"><svg><use href="#i-warn"/></svg></span><div class="nb2"><strong>蠶豆病提醒</strong>接種後如需退燒藥，切勿用阿士匹靈，可用撲熱息痛。發高燒 (40°C+) 請即就醫。</div></div>
     <div style="height:32px"></div>
+  </div>
+
+  <!-- ===== SUB: VACCINE EDIT ===== -->
+  <div class="sub" :class="{active: activeSub === 've'}" @touchstart="subSwipeStart" @touchmove="subSwipeMove" @touchend="subSwipeEnd">
+    <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">編輯疫苗記錄</span><div class="nb-ph"></div></div>
+    <div v-if="editVaccine">
+      <div class="nt nc"><span class="nn" style="color:var(--green)"><svg><use href="#i-shield"/></svg></span><div class="nb2"><strong>{{ editVaccine.name }}</strong><span v-if="editVaccine.dose"> — {{ editVaccine.dose }}</span></div></div>
+      <div class="st">接種資料</div>
+      <div class="fc">
+        <label class="fi"><span class="fl">接種日期</span><input class="fv" type="date" v-model="vaccineEditDate"></label>
+        <label class="fi"><span class="fl">接種地點</span><input class="fv" type="text" placeholder="例如：母嬰健康院" v-model="vaccineEditLocation"></label>
+      </div>
+      <div class="ba"><a href="javascript:;" class="bp" :class="{disabled: saving}" @click="saveVaccineEdit">標記為已完成</a></div>
+    </div>
   </div>
 
   <!-- ===== SUB: HEALTH SCHEDULE ===== -->
