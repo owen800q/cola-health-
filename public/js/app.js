@@ -1541,11 +1541,6 @@ const app = createApp({
         <p>{{ babyBirthday }}出生 · {{ daysSinceBirth }}日大</p>
       </div>
     </div>
-    <div class="sc">
-      <div class="si"><span class="sn">{{ homeStats.feedCount }}</span><span class="sl">今日餵奶</span></div>
-      <div class="si"><span class="sn">{{ homeStats.diaperTotal }}</span><span class="sl">今日換片</span></div>
-      <div class="si"><span class="sn">{{ homeStats.sleepHours }}h</span><span class="sl">今日睡眠</span></div>
-    </div>
     <div class="st">{{ babyName }}管理</div>
     <div class="cs">
       <div class="cl" @click="loadProfile(); openSub('pf')"><span class="ci"><svg><use href="#i-user"/></svg></span><div class="cb"><div class="ct">{{ babyName }}資料設定</div></div><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
