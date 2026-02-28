@@ -380,6 +380,9 @@ const app = createApp({
       if (!msg && chatImage.value) msg = '請分析這張圖片';
       chatInput.value = '';
       chatError.value = '';
+      // Reset textarea height
+      var chatEl = document.getElementById('chat-input');
+      if (chatEl) chatEl.style.height = 'auto';
       var img = chatImage.value;
       chatImage.value = null;
       chatMessages.value.push({ role: 'user', content: msg, image: img || null });
@@ -440,6 +443,28 @@ const app = createApp({
     }
 
     function clearChatImage() { chatImage.value = null; }
+
+    // Markdown rendering for AI messages
+    var _markedInst = typeof marked !== 'undefined' && marked.marked ? marked.marked : (typeof marked !== 'undefined' ? marked : null);
+    if (_markedInst && _markedInst.setOptions) {
+      _markedInst.setOptions({ breaks: true, gfm: true });
+    }
+    function renderMd(text) {
+      if (!text) return '';
+      if (_markedInst && _markedInst.parse) {
+        try { return _markedInst.parse(text); } catch(e) {}
+      }
+      // Fallback: escape HTML and convert newlines
+      return text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g, '<br>');
+    }
+
+    // Auto-grow textarea like WhatsApp/Telegram
+    function autoGrowInput(e) {
+      var el = e && e.target ? e.target : document.getElementById('chat-input');
+      if (!el) return;
+      el.style.height = 'auto';
+      el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+    }
 
     function clearChat() {
       chatMessages.value = [];
@@ -1317,7 +1342,7 @@ const app = createApp({
       // AI Chat
       chatMessages, chatInput, chatImage, chatLoading, chatError,
       sendChat, pickChatImage, clearChatImage, clearChat,
-      chatProvider, setChatProvider,
+      chatProvider, setChatProvider, renderMd, autoGrowInput,
       // Profile
       profileForm, saveProfile, loadProfile,
       // Dialog
@@ -1875,7 +1900,9 @@ const app = createApp({
       <div v-for="(msg, idx) in chatMessages" :key="idx" class="chat-msg" :class="{'chat-msg-user': msg.role === 'user', 'chat-msg-ai': msg.role === 'assistant'}">
         <div class="chat-bubble">
           <img v-if="msg.image" :src="msg.image" class="chat-user-img">
-          <div class="chat-text">{{ msg.content }}<span v-if="msg.role === 'assistant' && chatLoading && idx === chatMessages.length - 1" class="chat-cursor">|</span></div>
+          <div v-if="msg.role === 'assistant'" class="chat-text chat-md" v-html="renderMd(msg.content)"></div>
+          <div v-else class="chat-text">{{ msg.content }}</div>
+          <span v-if="msg.role === 'assistant' && chatLoading && idx === chatMessages.length - 1" class="chat-cursor">|</span>
         </div>
       </div>
       <div v-if="chatError" class="chat-error">
@@ -1890,7 +1917,7 @@ const app = createApp({
       </div>
       <div class="chat-input-row">
         <button class="chat-img-btn" @click="pickChatImage()" :disabled="chatLoading"><svg><use href="#i-image"/></svg></button>
-        <input id="chat-input" class="chat-input" type="text" placeholder="輸入你嘅問題..." v-model="chatInput" @keyup.enter="sendChat()" :disabled="chatLoading">
+        <textarea id="chat-input" class="chat-input" placeholder="輸入你嘅問題..." v-model="chatInput" @keydown.enter.exact.prevent="sendChat()" @input="autoGrowInput" rows="1" :disabled="chatLoading"></textarea>
         <button class="chat-send" @click="sendChat()" :disabled="(!chatInput.trim() && !chatImage) || chatLoading">
           <svg viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
