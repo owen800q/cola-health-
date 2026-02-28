@@ -80,11 +80,20 @@ export default {
       forwardHeaders.set('Host', targetHost);
     } catch {}
 
+    // Buffer the body as ArrayBuffer so Content-Length is preserved correctly.
+    // Streaming request.body directly can lose Content-Length, which breaks
+    // Google's resumable upload protocol for image attachments.
+    let body: ArrayBuffer | undefined;
+    if (targetMethod !== 'GET' && targetMethod !== 'HEAD' && request.body) {
+      body = await request.arrayBuffer();
+      forwardHeaders.set('Content-Length', String(body.byteLength));
+    }
+
     // Forward the request
     const resp = await fetch(targetUrl, {
       method: targetMethod,
       headers: forwardHeaders,
-      body: targetMethod !== 'GET' && targetMethod !== 'HEAD' ? request.body : undefined,
+      body,
       redirect: 'follow',
     });
 

@@ -265,6 +265,7 @@ export class GeminiClient {
         'X-Tenant-Id': 'bard-storage',
         'Push-Id': this.state.pushId,
         'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8',
+        'Content-Length': String(imageBytes.length),
       },
       body: imageBytes,
     });
@@ -456,6 +457,7 @@ export class GeminiClient {
             }
           }
 
+          // Fallback: check inner[26] (alternative text location)
           if (!responseText && inner?.[26]) {
             try {
               const textBits: string[] = [];
@@ -473,6 +475,45 @@ export class GeminiClient {
                   responseText = candidate;
                 }
               }
+            } catch {}
+          }
+
+          // Fallback: check inner[17] (image response text location)
+          if (!responseText && inner?.[17] && Array.isArray(inner[17])) {
+            try {
+              for (const item of inner[17]) {
+                if (Array.isArray(item) && item.length > 1) {
+                  const textParts = item[1];
+                  if (Array.isArray(textParts)) {
+                    const combined = textParts
+                      .filter((t: any) => typeof t === 'string')
+                      .join('');
+                    if (combined && combined.length > responseText.length) {
+                      responseText = combined;
+                    }
+                  }
+                }
+              }
+            } catch {}
+          }
+
+          // Last resort: deep scan all arrays in inner for text content
+          if (!responseText) {
+            try {
+              let bestText = '';
+              const deepScan = (obj: any, depth: number): void => {
+                if (depth > 8) return;
+                if (typeof obj === 'string' && obj.length > 20 && obj.length > bestText.length) {
+                  // Skip IDs/tokens (short alphanumeric), keep prose-like text
+                  if (/[.，。！？\s]{2,}/.test(obj) || obj.includes('\n')) {
+                    bestText = obj;
+                  }
+                } else if (Array.isArray(obj)) {
+                  for (const item of obj) deepScan(item, depth + 1);
+                }
+              };
+              deepScan(inner, 0);
+              if (bestText) responseText = bestText;
             } catch {}
           }
         }
@@ -549,7 +590,7 @@ export class GeminiClient {
     const result = this.parseStreamResponse(text);
 
     if (!result.text) {
-      const preview = text.slice(0, 500).replace(/\n/g, '\\n');
+      const preview = text.slice(0, 2000).replace(/\n/g, '\\n');
       throw new Error(
         `Gemini response parsing failed (rawLen=${result.rawLength}, chunks=${result.chunkCount}). ` +
         `Preview: ${preview}`

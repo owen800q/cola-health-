@@ -149,7 +149,16 @@ async function handleGeminiChat(
   const fullPrompt = `${systemPrompt}\n\n---\n\n${historyText ? historyText + '\n\n' : ''}用戶：${message}`;
 
   let imageBytes: Uint8Array | undefined;
+  let imageMime = 'image/jpeg';
+  let imageExt = 'image.jpg';
   if (image) {
+    // Detect MIME type from data URL prefix
+    const mimeMatch = image.match(/^data:(image\/[a-z+]+);base64,/i);
+    if (mimeMatch) {
+      imageMime = mimeMatch[1];
+      const ext = imageMime.split('/')[1].replace('+xml', '');
+      imageExt = `image.${ext}`;
+    }
     const base64 = image.includes(',') ? image.split(',')[1] : image;
     const binaryStr = atob(base64);
     imageBytes = new Uint8Array(binaryStr.length);
@@ -158,7 +167,7 @@ async function handleGeminiChat(
     }
   }
 
-  const geminiResp = await client.chat(fullPrompt, imageBytes, 'image.jpg', 'image/jpeg');
+  const geminiResp = await client.chat(fullPrompt, imageBytes, imageExt, imageMime);
 
   const text = geminiResp.text;
   const chunkSize = 4;
