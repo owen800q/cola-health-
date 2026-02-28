@@ -402,6 +402,7 @@ label.fi { cursor: pointer; }
   justify-content: center; cursor: pointer; flex-shrink: 0;
 }
 .chat-img-btn:active { background: #e0e0e0; }
+.chat-img-btn.disabled { opacity: 0.4; pointer-events: none; }
 .chat-img-btn svg { width: 18px; height: 18px; }
 .chat-input {
   flex: 1; min-height: 40px; max-height: 120px; border: 1px solid var(--t4); border-radius: 20px;

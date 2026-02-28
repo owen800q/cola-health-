@@ -417,29 +417,26 @@ const app = createApp({
       });
     }
 
-    function pickChatImage() {
-      var inp = document.createElement('input');
-      inp.type = 'file';
-      inp.accept = 'image/*';
-      inp.onchange = function () {
-        if (!inp.files[0]) return;
-        var reader = new FileReader();
-        reader.onload = function (ev) {
-          var img = new Image();
-          img.onload = function () {
-            var canvas = document.createElement('canvas');
-            var maxW = 800;
-            var scale = Math.min(1, maxW / img.width);
-            canvas.width = img.width * scale;
-            canvas.height = img.height * scale;
-            canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-            chatImage.value = canvas.toDataURL('image/jpeg', 0.7);
-          };
-          img.src = ev.target.result;
+    function onChatImagePick(e) {
+      var file = e.target.files && e.target.files[0];
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function (ev) {
+        var img = new Image();
+        img.onload = function () {
+          var canvas = document.createElement('canvas');
+          var maxW = 800;
+          var scale = Math.min(1, maxW / img.width);
+          canvas.width = img.width * scale;
+          canvas.height = img.height * scale;
+          canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+          chatImage.value = canvas.toDataURL('image/jpeg', 0.7);
         };
-        reader.readAsDataURL(inp.files[0]);
+        img.src = ev.target.result;
       };
-      inp.click();
+      reader.readAsDataURL(file);
+      // Reset so same file can be picked again
+      e.target.value = '';
     }
 
     function clearChatImage() { chatImage.value = null; }
@@ -1341,7 +1338,7 @@ const app = createApp({
       takeBottlePhoto, pickBottlePhoto, removeBottlePhoto, fmtTimeAgo,
       // AI Chat
       chatMessages, chatInput, chatImage, chatLoading, chatError,
-      sendChat, pickChatImage, clearChatImage, clearChat,
+      sendChat, onChatImagePick, clearChatImage, clearChat,
       chatProvider, setChatProvider, renderMd, autoGrowInput,
       // Profile
       profileForm, saveProfile, loadProfile,
@@ -1911,7 +1908,7 @@ const app = createApp({
         <button class="chat-img-x" @click="clearChatImage()">&times;</button>
       </div>
       <div class="chat-input-row">
-        <button class="chat-img-btn" @click="pickChatImage()" :disabled="chatLoading"><svg><use href="#i-image"/></svg></button>
+        <label class="chat-img-btn" :class="{disabled: chatLoading}"><svg><use href="#i-image"/></svg><input type="file" accept="image/*" style="display:none" @change="onChatImagePick" :disabled="chatLoading"></label>
         <textarea id="chat-input" class="chat-input" placeholder="輸入你嘅問題..." v-model="chatInput" @keydown.enter.exact.prevent="sendChat()" @input="autoGrowInput" rows="1" :disabled="chatLoading"></textarea>
         <button class="chat-send" @click="sendChat()" :disabled="(!chatInput.trim() && !chatImage) || chatLoading">
           <svg viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
