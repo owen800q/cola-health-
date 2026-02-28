@@ -402,6 +402,8 @@ const app = createApp({
     const chatInput = ref('');
     const chatImage = ref(null);
     const chatLoading = ref(false);
+    const chatProvider = ref(localStorage.getItem('chatProvider') || 'google');
+    function setChatProvider(p) { chatProvider.value = p; localStorage.setItem('chatProvider', p); }
     const chatError = ref('');
 
     function sendChat() {
@@ -421,7 +423,7 @@ const app = createApp({
       });
       var range = localDayRange();
       API.chatAI(
-        msg, history, img, range,
+        msg, history, img, range, chatProvider.value,
         function onChunk(token) {
           chatMessages.value[aidx].content += token;
           nextTick(function () {
@@ -1348,6 +1350,7 @@ const app = createApp({
       // AI Chat
       chatMessages, chatInput, chatImage, chatLoading, chatError,
       sendChat, pickChatImage, clearChatImage, clearChat,
+      chatProvider, setChatProvider,
       // Profile
       profileForm, saveProfile, loadProfile,
       // Dialog
@@ -1894,6 +1897,10 @@ const app = createApp({
       <span class="nb-t">問 AI 助手</span>
       <span class="nb-a" @click="clearChat()" v-if="chatMessages.length"><svg><use href="#i-trash"/></svg></span>
       <div class="nb-ph" v-else></div>
+    </div>
+    <div class="chat-provider-bar">
+      <button class="chat-provider-btn" :class="{active: chatProvider === 'google'}" @click="setChatProvider('google')">Google Gemini</button>
+      <button class="chat-provider-btn" :class="{active: chatProvider === 'cloudflare'}" @click="setChatProvider('cloudflare')">Cloudflare AI</button>
     </div>
     <div class="chat-body" id="chat-scroll">
       <div v-if="!chatMessages.length" class="chat-welcome">

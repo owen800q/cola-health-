@@ -1,0 +1,8 @@
+name = "gemini-proxy"
+main = "index.ts"
+compatibility_date = "2024-01-01"
+
+[vars]
+# Set a shared secret to protect the proxy from unauthorized access.
+# Override with: wrangler secret put PROXY_KEY
+PROXY_KEY = ""
