@@ -237,6 +237,72 @@ async function handleCloudflareChat(
   });
 }
 
+// GET /api/ai/debug - test Gemini proxy connectivity
+aiRoutes.get('/debug', async (c) => {
+  const proxyUrl = c.env.GEMINI_PROXY || null;
+  const cookieStr = c.env.GEMINI_COOKIES || FALLBACK_GEMINI_COOKIES;
+  const info: Record<string, any> = {
+    proxyUrl,
+    hasCookies: !!cookieStr,
+    cookieLength: cookieStr?.length || 0,
+  };
+
+  try {
+    // Test: fetch Gemini app page through proxy
+    const targetUrl = 'https://gemini.google.com/app';
+    const ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+
+    let resp: Response;
+    if (proxyUrl) {
+      resp = await fetch(proxyUrl, {
+        method: 'POST',
+        headers: {
+          'X-Target-Url': targetUrl,
+          'X-Target-Method': 'GET',
+          'User-Agent': ua,
+          'Cookie': cookieStr,
+          'Accept': 'text/html',
+          'Accept-Language': 'zh-HK,zh;q=0.9,en;q=0.8',
+        },
+      });
+    } else {
+      resp = await fetch(targetUrl, {
+        method: 'GET',
+        headers: {
+          'User-Agent': ua,
+          'Cookie': cookieStr,
+          'Accept': 'text/html',
+        },
+        redirect: 'follow',
+      });
+    }
+
+    const html = await resp.text();
+    const hasSnlm0e = html.includes('SNlM0e');
+    const snlm0eMatch = html.match(/"SNlM0e":"([^"]{10})/);
+    const titleMatch = html.match(/<title>([^<]+)<\/title>/);
+    const hasSorry = html.includes('google.com/sorry') || html.includes('/sorry/index');
+    const hasLogin = html.includes('accounts.google.com/ServiceLogin');
+    const hasConsent = html.includes('consent.google.com');
+
+    info.proxyTest = {
+      status: resp.status,
+      htmlLength: html.length,
+      pageTitle: titleMatch ? titleMatch[1] : 'none',
+      hasSnlm0e,
+      snlm0ePreview: snlm0eMatch ? snlm0eMatch[1] + '...' : 'NOT FOUND',
+      hasSorryPage: hasSorry,
+      hasLoginPage: hasLogin,
+      hasConsentPage: hasConsent,
+      htmlFirst200: html.slice(0, 200),
+    };
+  } catch (err: any) {
+    info.proxyTest = { error: String(err?.message || err) };
+  }
+
+  return c.json(info);
+});
+
 // POST /api/ai/chat
 aiRoutes.post('/chat', async (c) => {
   const db = c.env.DB;
