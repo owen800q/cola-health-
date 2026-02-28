@@ -177,14 +177,15 @@ export class GeminiClient {
       throw new Error('Google blocked this IP (sorry/CAPTCHA). Configure GEMINI_PROXY with a proxy that has a clean residential IP.');
     }
 
-    // Check if we landed on a login/consent page
-    if (html.includes('accounts.google.com/ServiceLogin') || html.includes('consent.google.com')) {
-      throw new Error('Gemini redirected to login page — cookies are expired. Please re-export cookies from your browser.');
-    }
-
-    // Extract SNlM0e (CSRF/AT token)
+    // Extract SNlM0e (CSRF/AT token) — check this BEFORE the login page
+    // check, because the authenticated Gemini page naturally contains
+    // ServiceLogin links even when the session is fully valid.
     const atMatch = html.match(/"SNlM0e":"([^"]+)"/);
     if (!atMatch) {
+      // No token found — now check why
+      if (html.includes('accounts.google.com/ServiceLogin') || html.includes('consent.google.com')) {
+        throw new Error('Gemini redirected to login page — cookies are expired. Please re-export cookies from your browser.');
+      }
       const titleMatch = html.match(/<title>([^<]+)<\/title>/);
       const pageTitle = titleMatch ? titleMatch[1] : 'unknown page';
       throw new Error(`Could not find SNlM0e token (page: "${pageTitle}"). Cookies may be invalid or expired.`);
