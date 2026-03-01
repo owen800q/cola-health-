@@ -1939,9 +1939,10 @@ const app = createApp({
       <div v-for="(msg, idx) in chatMessages" :key="idx" class="chat-msg" :class="{'chat-msg-user': msg.role === 'user', 'chat-msg-ai': msg.role === 'assistant'}">
         <div class="chat-bubble">
           <img v-if="msg.image" :src="msg.image" class="chat-user-img">
-          <div v-if="msg.role === 'assistant'" class="chat-text chat-md" v-html="renderMd(msg.content)"></div>
-          <div v-else class="chat-text">{{ msg.content }}</div>
-          <span v-if="msg.role === 'assistant' && chatLoading && idx === chatMessages.length - 1" class="chat-cursor">|</span>
+          <div v-if="msg.role === 'assistant' && chatLoading && idx === chatMessages.length - 1 && !msg.content" class="chat-loading-dots"><span></span><span></span><span></span></div>
+          <div v-if="msg.role === 'assistant'" v-show="msg.content" class="chat-text chat-md" v-html="renderMd(msg.content)"></div>
+          <div v-else-if="msg.role !== 'assistant'" class="chat-text">{{ msg.content }}</div>
+          <span v-if="msg.role === 'assistant' && chatLoading && idx === chatMessages.length - 1 && msg.content" class="chat-cursor">|</span>
         </div>
       </div>
       <div v-if="chatError" class="chat-error">
