@@ -87,13 +87,20 @@ Deno.serve({ port: 8000 }, async (req: Request): Promise<Response> => {
   }
 
   // Forward the request to Google
+  // Buffer the body as ArrayBuffer so Content-Length is preserved correctly.
+  // Streaming req.body directly can lose Content-Length, which breaks
+  // Google's resumable upload protocol for image attachments.
   try {
+    let body: ArrayBuffer | undefined;
+    if (targetMethod !== "GET" && targetMethod !== "HEAD" && req.body) {
+      body = await req.arrayBuffer();
+      forwardHeaders.set("Content-Length", String(body.byteLength));
+    }
+
     const resp = await fetch(targetUrl, {
       method: targetMethod,
       headers: forwardHeaders,
-      body: targetMethod !== "GET" && targetMethod !== "HEAD"
-        ? req.body
-        : undefined,
+      body,
       redirect: "follow",
     });
 
