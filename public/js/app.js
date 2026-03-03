@@ -235,7 +235,10 @@ const app = createApp({
     });
 
     async function loadVaccines() {
-      try { vaccines.value = await API.getVaccines(store.babyId) || []; } catch (e) { console.warn('Load vaccines:', e); }
+      try {
+        await API.initBaby();
+        vaccines.value = await API.getVaccines(store.babyId) || [];
+      } catch (e) { console.warn('Load vaccines:', e); }
     }
 
     function fmtVaccineDate(v) {
