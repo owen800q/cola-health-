@@ -224,6 +224,13 @@ const app = createApp({
         if (!monthMap[best]) { monthMap[best] = { label: labels[best] || best + '個月', items: [] }; groups.push(monthMap[best]); }
         monthMap[best].items.push(v);
       }
+      // Sort within each group: government first, then private
+      for (const group of groups) {
+        group.items.sort(function(a, b) {
+          var typeOrder = { government: 0, private: 1 };
+          return (typeOrder[a.vaccine_type] || 0) - (typeOrder[b.vaccine_type] || 0);
+        });
+      }
       return groups;
     });
 
@@ -1688,14 +1695,14 @@ const app = createApp({
   <!-- ===== SUB: VACCINE ===== -->
   <div class="sub" :class="{active: activeSub === 'he'}" @touchstart="subSwipeStart" @touchmove="subSwipeMove" @touchend="subSwipeEnd">
     <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">疫苗接種計劃</span><div class="nb-ph"></div></div>
-    <div class="nt nc"><span class="nn" style="color:var(--blue)"><svg><use href="#i-info"/></svg></span><div class="nb2">根據衞生署「香港兒童免疫接種計劃」。<br>來源：<span style="color:var(--blue)">fhs.gov.hk</span></div></div>
+    <div class="nt nc"><span class="nn" style="color:var(--blue)"><svg><use href="#i-info"/></svg></span><div class="nb2">根據衞生署「香港兒童免疫接種計劃」及私家自費疫苗建議。<br><span class="tg tg-p" style="margin-top:4px">自費</span> 為私家疫苗，需自行安排及付費接種。</div></div>
     <template v-for="group in vaccineGroups" :key="group.label">
       <div class="st">{{ group.label }}</div>
       <div class="cs">
         <div class="cl" v-for="v in group.items" :key="v.id" @click="openVaccineEdit(v)">
           <span class="ci" :style="vaccineIconColor(v)"><svg><use :href="vaccineIcon(v)"/></svg></span>
-          <div class="cb"><div class="ct">{{ vaccineName(v) }}</div><div class="cd">{{ vaccineDesc(v) }}</div></div>
-          <div class="cr row"><span class="tg" :class="vaccineStatusCls(v)">{{ vaccineStatusText(v) }}</span><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
+          <div class="cb"><div class="ct">{{ vaccineName(v) }}</div><div class="cd">{{ vaccineDesc(v) }}</div><div v-if="v.common_side_effects" class="cd" style="color:var(--warn);font-size:12px">副作用：{{ v.common_side_effects }}</div></div>
+          <div class="cr row"><span v-if="v.vaccine_type === 'private'" class="tg tg-p">自費</span><span class="tg" :class="vaccineStatusCls(v)">{{ vaccineStatusText(v) }}</span><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
         </div>
       </div>
     </template>
@@ -1707,7 +1714,8 @@ const app = createApp({
   <div class="sub" :class="{active: activeSub === 've'}" @touchstart="subSwipeStart" @touchmove="subSwipeMove" @touchend="subSwipeEnd">
     <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">編輯疫苗記錄</span><div class="nb-ph"></div></div>
     <div v-if="editVaccine">
-      <div class="nt nc"><span class="nn" style="color:var(--green)"><svg><use href="#i-shield"/></svg></span><div class="nb2"><strong>{{ editVaccine.name }}</strong><span v-if="editVaccine.dose"> — {{ editVaccine.dose }}</span></div></div>
+      <div class="nt nc"><span class="nn" style="color:var(--green)"><svg><use href="#i-shield"/></svg></span><div class="nb2"><strong>{{ editVaccine.name }}</strong><span v-if="editVaccine.dose"> — {{ editVaccine.dose }}</span><span v-if="editVaccine.vaccine_type === 'private'" class="tg tg-p" style="margin-left:6px">自費</span></div></div>
+      <div v-if="editVaccine.common_side_effects" class="nt ni"><span class="nn" style="color:var(--warn)"><svg><use href="#i-warn"/></svg></span><div class="nb2"><strong>常見副作用</strong>{{ editVaccine.common_side_effects }}</div></div>
       <div class="st">接種資料</div>
       <div class="fc">
         <label class="fi"><span class="fl">接種日期</span><input class="fv" type="date" v-model="vaccineEditDate"></label>

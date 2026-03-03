@@ -59,6 +59,8 @@ CREATE TABLE IF NOT EXISTS vaccines (
   batch_number TEXT,
   side_effects TEXT,
   note TEXT,
+  vaccine_type TEXT CHECK(vaccine_type IN ('government','private')) DEFAULT 'government',
+  common_side_effects TEXT,
   created_at TEXT DEFAULT (datetime('now'))
 );
 
