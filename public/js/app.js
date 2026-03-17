@@ -1806,7 +1806,7 @@ const app = createApp({
     <div class="st">餵奶提醒</div>
     <div class="rm-card">
       <div class="rm-ico" style="background:#E8F4FD;color:var(--blue)"><svg><use href="#i-milk"/></svg></div>
-      <div class="rm-body"><div class="rm-title">餵奶間隔提醒</div><div class="rm-desc">距上次餵奶 {{ reminders.feed.interval_minutes / 60 }} 小時後提醒</div></div>
+      <div class="rm-body"><div class="rm-title">餵奶間隔提醒</div><div class="rm-desc">距上次餵奶 {{ reminders.feed.interval_minutes / 60 }} 小時前 15 分鐘提醒</div></div>
       <label class="tog"><input type="checkbox" v-model="reminders.feed.enabled" @change="toggleReminder('feed')"><span class="tsl"></span></label>
     </div>
     <div class="fc" v-if="reminders.feed.enabled">
