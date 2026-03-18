@@ -287,6 +287,38 @@ const app = createApp({
       return name;
     }
 
+    // Vaccine edit
+    const editVaccine = ref(null);
+    const vaccineEditDate = ref('');
+    const vaccineEditLocation = ref('');
+
+    function openVaccineEdit(v) {
+      editVaccine.value = v;
+      const today = new Date();
+      vaccineEditDate.value = v.actual_date || today.getFullYear() + '-' + pad(today.getMonth()+1) + '-' + pad(today.getDate());
+      vaccineEditLocation.value = v.location || '';
+      openSub('ve');
+    }
+
+    async function saveVaccineEdit() {
+      if (!editVaccine.value || saving.value) return;
+      saving.value = true;
+      showLoading('儲存中...');
+      try {
+        await API.markVaccine(editVaccine.value.id, {
+          actual_date: vaccineEditDate.value,
+          status: 'done',
+          location: vaccineEditLocation.value || null,
+        });
+        hideLoading();
+        showToast('已標記為已完成');
+        editVaccine.value = null;
+        closeSub();
+        loadVaccines();
+      } catch (e) { hideLoading(); showToast('儲存失敗'); }
+      finally { saving.value = false; }
+    }
+
     // ===== BOTTLE ASSEMBLY =====
     const bottleSlots = ref([]);
     const bottlePhotoZoom = ref(null);
@@ -386,6 +418,8 @@ const app = createApp({
     const chatInput = ref('');
     const chatImage = ref(null);
     const chatLoading = ref(false);
+    const chatProvider = ref(localStorage.getItem('chatProvider') || 'google');
+    function setChatProvider(p) { chatProvider.value = p; localStorage.setItem('chatProvider', p); }
     const chatError = ref('');
 
     function sendChat() {
@@ -394,6 +428,9 @@ const app = createApp({
       if (!msg && chatImage.value) msg = '請分析這張圖片';
       chatInput.value = '';
       chatError.value = '';
+      // Reset textarea height
+      var chatEl = document.getElementById('chat-input');
+      if (chatEl) chatEl.style.height = 'auto';
       var img = chatImage.value;
       chatImage.value = null;
       chatMessages.value.push({ role: 'user', content: msg, image: img || null });
@@ -405,7 +442,7 @@ const app = createApp({
       });
       var range = localDayRange();
       API.chatAI(
-        msg, history, img, range,
+        msg, history, img, range, chatProvider.value,
         function onChunk(token) {
           chatMessages.value[aidx].content += token;
           nextTick(function () {
@@ -428,32 +465,51 @@ const app = createApp({
       });
     }
 
-    function pickChatImage() {
-      var inp = document.createElement('input');
-      inp.type = 'file';
-      inp.accept = 'image/*';
-      inp.onchange = function () {
-        if (!inp.files[0]) return;
-        var reader = new FileReader();
-        reader.onload = function (ev) {
-          var img = new Image();
-          img.onload = function () {
-            var canvas = document.createElement('canvas');
-            var maxW = 800;
-            var scale = Math.min(1, maxW / img.width);
-            canvas.width = img.width * scale;
-            canvas.height = img.height * scale;
-            canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-            chatImage.value = canvas.toDataURL('image/jpeg', 0.7);
-          };
-          img.src = ev.target.result;
+    function onChatImagePick(e) {
+      var file = e.target.files && e.target.files[0];
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function (ev) {
+        var img = new Image();
+        img.onload = function () {
+          var canvas = document.createElement('canvas');
+          var maxW = 800;
+          var scale = Math.min(1, maxW / img.width);
+          canvas.width = img.width * scale;
+          canvas.height = img.height * scale;
+          canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+          chatImage.value = canvas.toDataURL('image/jpeg', 0.7);
         };
-        reader.readAsDataURL(inp.files[0]);
+        img.src = ev.target.result;
       };
-      inp.click();
+      reader.readAsDataURL(file);
+      // Reset so same file can be picked again
+      e.target.value = '';
     }
 
     function clearChatImage() { chatImage.value = null; }
+
+    // Markdown rendering for AI messages
+    var _markedInst = typeof marked !== 'undefined' && marked.marked ? marked.marked : (typeof marked !== 'undefined' ? marked : null);
+    if (_markedInst && _markedInst.setOptions) {
+      _markedInst.setOptions({ breaks: true, gfm: true });
+    }
+    function renderMd(text) {
+      if (!text) return '';
+      if (_markedInst && _markedInst.parse) {
+        try { return _markedInst.parse(text); } catch(e) {}
+      }
+      // Fallback: escape HTML and convert newlines
+      return text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g, '<br>');
+    }
+
+    // Auto-grow textarea like WhatsApp/Telegram
+    function autoGrowInput(e) {
+      var el = e && e.target ? e.target : document.getElementById('chat-input');
+      if (!el) return;
+      el.style.height = 'auto';
+      el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+    }
 
     function clearChat() {
       chatMessages.value = [];
@@ -1316,6 +1372,60 @@ const app = createApp({
       } catch { showToast('檢查失敗'); }
     }
 
+    // ===== BABY CARE ROOMS =====
+    const mbRooms = ref([]);
+    const mbTotal = ref(0);
+    const mbSearch = ref('');
+    const mbDistrict = ref('全部');
+    const mbType = ref('全部');
+    const mbLoading = ref(false);
+    const mbDistricts = ref([]);
+    const mbTypes = ['全部','商場','交通','政府','醫院','其他'];
+    let _mbDebounce = null;
+
+    async function loadMbRooms() {
+      mbLoading.value = true;
+      try {
+        const params = {};
+        if (mbDistrict.value !== '全部') params.district = mbDistrict.value;
+        if (mbType.value !== '全部') params.type = mbType.value;
+        if (mbSearch.value) params.q = mbSearch.value;
+        const data = await API.getBabyRooms(params);
+        mbRooms.value = data.rooms || [];
+        mbTotal.value = data.total || 0;
+      } catch (e) {
+        console.warn('Failed to load rooms:', e);
+      } finally {
+        mbLoading.value = false;
+      }
+    }
+
+    async function loadMbDistricts() {
+      if (mbDistricts.value.length) return;
+      try {
+        mbDistricts.value = await API.getBabyRoomDistricts();
+      } catch (e) {
+        console.warn('Failed to load districts:', e);
+      }
+    }
+
+    function openMbRooms() {
+      openSub('mb');
+      loadMbRooms();
+      loadMbDistricts();
+    }
+
+    // Debounced watch for search filters
+    watch([mbSearch, mbDistrict, mbType], () => {
+      if (_mbDebounce) clearTimeout(_mbDebounce);
+      _mbDebounce = setTimeout(() => loadMbRooms(), 300);
+    });
+
+    function mbFacilities(room) {
+      try { return JSON.parse(room.facilities || '[]'); }
+      catch { return []; }
+    }
+
     // ===== LIFECYCLE =====
     onMounted(async () => {
       _nowTimer = setInterval(() => { now.value = Date.now(); }, 1000);
@@ -1390,12 +1500,14 @@ const app = createApp({
       isFever, loadTempHistory,
       // Vaccines
       vaccines, vaccineGroups, vaccineDesc, vaccineName, vaccineStatusCls, vaccineStatusText, vaccineIcon, vaccineIconColor,
+      editVaccine, vaccineEditDate, vaccineEditLocation, openVaccineEdit, saveVaccineEdit,
       // Bottle Assembly
       bottleSlots, bottlePhotoZoom, loadBottleSlots, addBottleSlot, removeBottleSlot,
       takeBottlePhoto, pickBottlePhoto, removeBottlePhoto, fmtTimeAgo,
       // AI Chat
       chatMessages, chatInput, chatImage, chatLoading, chatError,
-      sendChat, pickChatImage, clearChatImage, clearChat,
+      sendChat, onChatImagePick, clearChatImage, clearChat,
+      chatProvider, setChatProvider, renderMd, autoGrowInput,
       // Profile
       profileForm, saveProfile, loadProfile,
       // Dialog
@@ -1409,6 +1521,9 @@ const app = createApp({
       reminders, toggleReminder, updateReminderInterval,
       // Push
       pushEnabled, enablePush, testPush, checkReminders,
+      // Baby care rooms
+      mbRooms, mbTotal, mbSearch, mbDistrict, mbType, mbLoading,
+      mbDistricts, mbTypes, openMbRooms, mbFacilities,
     };
   },
   template: `
@@ -1472,6 +1587,7 @@ const app = createApp({
       <div class="gi" @click="openSub('rm')"><div class="gi-ico" style="color:var(--orange)"><svg><use href="#i-bell"/></svg></div><span>提醒設定</span></div>
       <div class="gi" @click="openSub('bt'); loadBottleSlots()"><div class="gi-ico" style="color:var(--teal)"><svg><use href="#i-bottle"/></svg></div><span>奶瓶組裝</span></div>
       <div class="gi" @click="openSub('ai')"><div class="gi-ico" style="color:var(--purple)"><svg><use href="#i-chat"/></svg></div><span>問 AI</span></div>
+      <div class="gi" @click="openMbRooms()"><div class="gi-ico" style="color:var(--green)"><svg><use href="#i-mappin"/></svg></div><span>母嬰室</span></div>
     </div>
     <div class="st">今日記錄</div>
     <div class="cs" v-if="recentItems.length">
@@ -1586,11 +1702,6 @@ const app = createApp({
         <p>{{ babyBirthday }}出生 · {{ daysSinceBirth }}日大</p>
       </div>
     </div>
-    <div class="sc">
-      <div class="si"><span class="sn">{{ homeStats.feedCount }}</span><span class="sl">今日餵奶</span></div>
-      <div class="si"><span class="sn">{{ homeStats.diaperTotal }}</span><span class="sl">今日換片</span></div>
-      <div class="si"><span class="sn">{{ homeStats.sleepHours }}h</span><span class="sl">今日睡眠</span></div>
-    </div>
     <div class="st">{{ babyName }}管理</div>
     <div class="cs">
       <div class="cl" @click="loadProfile(); openSub('pf')"><span class="ci"><svg><use href="#i-user"/></svg></span><div class="cb"><div class="ct">{{ babyName }}資料設定</div></div><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
@@ -1601,6 +1712,7 @@ const app = createApp({
       <div class="cl" @click="openSub('he')"><span class="ci" style="color:var(--green)"><svg><use href="#i-shield"/></svg></span><div class="cb"><div class="ct">疫苗接種計劃</div><div class="cd">香港兒童免疫接種計劃</div></div><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
       <div class="cl" @click="openSub('hs')"><span class="ci" style="color:var(--blue)"><svg><use href="#i-health"/></svg></span><div class="cb"><div class="ct">幼兒健康及發展綜合計劃</div></div><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
       <div class="cl" @click="openSub('g6')"><span class="ci" style="color:var(--red)"><svg><use href="#i-warn"/></svg></span><div class="cb"><div class="ct">蠶豆病須知</div></div><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
+      <div class="cl" @click="openMbRooms()"><span class="ci" style="color:var(--green)"><svg><use href="#i-mappin"/></svg></span><div class="cb"><div class="ct">母嬰室搜尋</div><div class="cd">全港母嬰室及育嬰間位置</div></div><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
     </div>
     <div class="st">資料</div>
     <div class="cs">
@@ -1757,15 +1869,29 @@ const app = createApp({
     <template v-for="group in vaccineGroups" :key="group.label">
       <div class="st">{{ group.label }}</div>
       <div class="cs">
-        <div class="cl" v-for="v in group.items" :key="v.id">
+        <div class="cl" v-for="v in group.items" :key="v.id" @click="openVaccineEdit(v)">
           <span class="ci" :style="vaccineIconColor(v)"><svg><use :href="vaccineIcon(v)"/></svg></span>
           <div class="cb"><div class="ct">{{ vaccineName(v) }}</div><div class="cd">{{ vaccineDesc(v) }}</div></div>
-          <div class="cr row"><span class="tg" :class="vaccineStatusCls(v)">{{ vaccineStatusText(v) }}</span></div>
+          <div class="cr row"><span class="tg" :class="vaccineStatusCls(v)">{{ vaccineStatusText(v) }}</span><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
         </div>
       </div>
     </template>
     <div class="nt ni"><span class="nn" style="color:var(--warn)"><svg><use href="#i-warn"/></svg></span><div class="nb2"><strong>蠶豆病提醒</strong>接種後如需退燒藥，切勿用阿士匹靈，可用撲熱息痛。發高燒 (40°C+) 請即就醫。</div></div>
     <div style="height:32px"></div>
+  </div>
+
+  <!-- ===== SUB: VACCINE EDIT ===== -->
+  <div class="sub" :class="{active: activeSub === 've'}" @touchstart="subSwipeStart" @touchmove="subSwipeMove" @touchend="subSwipeEnd">
+    <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">編輯疫苗記錄</span><div class="nb-ph"></div></div>
+    <div v-if="editVaccine">
+      <div class="nt nc"><span class="nn" style="color:var(--green)"><svg><use href="#i-shield"/></svg></span><div class="nb2"><strong>{{ editVaccine.name }}</strong><span v-if="editVaccine.dose"> — {{ editVaccine.dose }}</span></div></div>
+      <div class="st">接種資料</div>
+      <div class="fc">
+        <label class="fi"><span class="fl">接種日期</span><input class="fv" type="date" v-model="vaccineEditDate"></label>
+        <label class="fi"><span class="fl">接種地點</span><input class="fv" type="text" placeholder="例如：母嬰健康院" v-model="vaccineEditLocation"></label>
+      </div>
+      <div class="ba"><a href="javascript:;" class="bp" :class="{disabled: saving}" @click="saveVaccineEdit">標記為已完成</a></div>
+    </div>
   </div>
 
   <!-- ===== SUB: HEALTH SCHEDULE ===== -->
@@ -1791,6 +1917,54 @@ const app = createApp({
     <div style="height:32px"></div>
   </div>
 
+  <!-- ===== SUB: BABY CARE ROOMS ===== -->
+  <div class="sub" :class="{active: activeSub === 'mb'}" @touchstart="subSwipeStart" @touchmove="subSwipeMove" @touchend="subSwipeEnd">
+    <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">母嬰室搜尋</span><div class="nb-ph"></div></div>
+    <div class="mb-search">
+      <input type="text" v-model="mbSearch" placeholder="搜尋母嬰室名稱或地址..." class="mb-input">
+    </div>
+    <div class="mb-filters">
+      <div class="mb-filter-row">
+        <span class="mb-fl">類型</span>
+        <div class="mb-tags">
+          <span v-for="t in mbTypes" :key="t" class="mb-tag" :class="{active: mbType === t}" @click="mbType = t">{{ t }}</span>
+        </div>
+      </div>
+      <div class="mb-filter-row">
+        <span class="mb-fl">地區</span>
+        <div class="mb-tags">
+          <span class="mb-tag" :class="{active: mbDistrict === '全部'}" @click="mbDistrict = '全部'">全部</span>
+          <span v-for="d in mbDistricts" :key="d.district" class="mb-tag" :class="{active: mbDistrict === d.district}" @click="mbDistrict = d.district">{{ d.district }}（{{ d.count }}）</span>
+        </div>
+      </div>
+    </div>
+    <div class="st">搜尋結果（{{ mbTotal }}）</div>
+    <div v-if="mbLoading" style="text-align:center;padding:32px;color:var(--t2)">載入中...</div>
+    <div class="cs" v-else-if="mbRooms.length">
+      <div class="cl" v-for="room in mbRooms" :key="room.id">
+        <div class="ri" style="background:#E8F8F0;color:var(--green)"><svg><use href="#i-mappin"/></svg></div>
+        <div class="cb">
+          <div class="ct">{{ room.name }}</div>
+          <div class="cd">{{ room.district }} · {{ room.type }}</div>
+          <div class="cd" v-if="room.address">{{ room.address }}</div>
+          <div class="cd" v-if="room.hours">{{ room.hours }}</div>
+          <div class="mb-fc" v-if="mbFacilities(room).length">
+            <span class="mb-tag active" v-for="f in mbFacilities(room)" :key="f">{{ f }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div v-else style="text-align:center;padding:40px 16px;color:var(--t3)">
+      <svg style="width:48px;height:48px;margin-bottom:8px"><use href="#i-mappin"/></svg>
+      <p>找不到符合條件的母嬰室</p>
+    </div>
+    <div class="nt nc" style="margin-top:8px">
+      <span class="nn" style="color:var(--blue)"><svg><use href="#i-info"/></svg></span>
+      <div class="nb2">資料來源：BBGAGA.com 及衞生署。數據每日自動更新。如有遺漏，歡迎回報。</div>
+    </div>
+    <div style="height:32px"></div>
+  </div>
+
   <!-- ===== SUB: REMINDERS ===== -->
   <div class="sub" :class="{active: activeSub === 'rm'}" @touchstart="subSwipeStart" @touchmove="subSwipeMove" @touchend="subSwipeEnd">
     <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">提醒及推送通知</span><div class="nb-ph"></div></div>
@@ -1809,7 +1983,7 @@ const app = createApp({
     <div class="st">餵奶提醒</div>
     <div class="rm-card">
       <div class="rm-ico" style="background:#E8F4FD;color:var(--blue)"><svg><use href="#i-milk"/></svg></div>
-      <div class="rm-body"><div class="rm-title">餵奶間隔提醒</div><div class="rm-desc">距上次餵奶 {{ reminders.feed.interval_minutes / 60 }} 小時後提醒</div></div>
+      <div class="rm-body"><div class="rm-title">餵奶間隔提醒</div><div class="rm-desc">距上次餵奶 {{ reminders.feed.interval_minutes / 60 }} 小時前 15 分鐘提醒</div></div>
       <label class="tog"><input type="checkbox" v-model="reminders.feed.enabled" @change="toggleReminder('feed')"><span class="tsl"></span></label>
     </div>
     <div class="fc" v-if="reminders.feed.enabled">
@@ -1928,6 +2102,10 @@ const app = createApp({
       <span class="nb-a" @click="clearChat()" v-if="chatMessages.length"><svg><use href="#i-trash"/></svg></span>
       <div class="nb-ph" v-else></div>
     </div>
+    <div class="chat-provider-bar">
+      <button class="chat-provider-btn" :class="{active: chatProvider === 'google'}" @click="setChatProvider('google')">Google Gemini</button>
+      <button class="chat-provider-btn" :class="{active: chatProvider === 'cloudflare'}" @click="setChatProvider('cloudflare')">Cloudflare AI</button>
+    </div>
     <div class="chat-body" id="chat-scroll">
       <div v-if="!chatMessages.length" class="chat-welcome">
         <div class="chat-welcome-icon"><svg><use href="#i-chat"/></svg></div>
@@ -1943,7 +2121,9 @@ const app = createApp({
       <div v-for="(msg, idx) in chatMessages" :key="idx" class="chat-msg" :class="{'chat-msg-user': msg.role === 'user', 'chat-msg-ai': msg.role === 'assistant'}">
         <div class="chat-bubble">
           <img v-if="msg.image" :src="msg.image" class="chat-user-img">
-          <div class="chat-text">{{ msg.content }}<span v-if="msg.role === 'assistant' && chatLoading && idx === chatMessages.length - 1" class="chat-cursor">|</span></div>
+          <div v-if="msg.role === 'assistant'" class="chat-text chat-md" v-html="renderMd(msg.content)"></div>
+          <div v-else class="chat-text">{{ msg.content }}</div>
+          <span v-if="msg.role === 'assistant' && chatLoading && idx === chatMessages.length - 1" class="chat-cursor">|</span>
         </div>
       </div>
       <div v-if="chatError" class="chat-error">
@@ -1957,8 +2137,8 @@ const app = createApp({
         <button class="chat-img-x" @click="clearChatImage()">&times;</button>
       </div>
       <div class="chat-input-row">
-        <button class="chat-img-btn" @click="pickChatImage()" :disabled="chatLoading"><svg><use href="#i-image"/></svg></button>
-        <input id="chat-input" class="chat-input" type="text" placeholder="輸入你嘅問題..." v-model="chatInput" @keyup.enter="sendChat()" :disabled="chatLoading">
+        <label class="chat-img-btn" :class="{disabled: chatLoading}"><svg><use href="#i-image"/></svg><input type="file" accept="image/*" style="display:none" @change="onChatImagePick" :disabled="chatLoading"></label>
+        <textarea id="chat-input" class="chat-input" placeholder="輸入你嘅問題..." v-model="chatInput" @keydown.enter.exact.prevent="sendChat()" @input="autoGrowInput" rows="1" :disabled="chatLoading"></textarea>
         <button class="chat-send" @click="sendChat()" :disabled="(!chatInput.trim() && !chatImage) || chatLoading">
           <svg viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>

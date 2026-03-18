@@ -1,9 +1,19 @@
 // Cron handler: check reminders and send push notifications
 import type { Bindings } from './index';
 import { sendPush, type PushSub, type VapidKeys } from './lib/webpush';
+import { scrapeAndSync, shouldSync } from './lib/scraper';
 
 export async function handleScheduled(env: Bindings): Promise<void> {
   const db = env.DB;
+
+  // Daily baby care rooms data sync
+  try {
+    if (await shouldSync(db)) {
+      await scrapeAndSync(db);
+    }
+  } catch (e) {
+    console.error('Baby rooms sync error:', e);
+  }
 
   // Ensure notification_log table exists (dedup tracking)
   await db.prepare('CREATE TABLE IF NOT EXISTS notification_log (reminder_type TEXT PRIMARY KEY, last_notified_at TEXT NOT NULL)').run();
@@ -125,8 +135,14 @@ async function checkFeedReminder(
   const lastTime = new Date(last.time as string).getTime();
   const elapsed = now - lastTime;
   const intervalMs = intervalMin * 60 * 1000;
+  const advanceMs = 15 * 60 * 1000; // 提前 15 分鐘通知
 
-  if (elapsed < intervalMs) return '';
+  if (elapsed < intervalMs - advanceMs) return '';
+
+  if (elapsed < intervalMs) {
+    const remaining = Math.round((intervalMs - elapsed) / 60000);
+    return `再過約 ${remaining} 分鐘就到餵奶時間，請準備喔！`;
+  }
 
   const mins = Math.round(elapsed / 60000);
   const h = Math.floor(mins / 60);
