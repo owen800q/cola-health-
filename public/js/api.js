@@ -73,6 +73,15 @@
     },
     markVaccine: (id, data) => request('/vaccines/' + id, { method: 'PUT', body: data }),
 
+    // ---- Temperatures ----
+    getTemperatures: (babyId, params) => {
+      const q = new URLSearchParams({ baby_id: babyId, ...params }).toString();
+      return request('/temperatures?' + q);
+    },
+    createTemperature: (data) => request('/temperatures', { method: 'POST', body: data }),
+    updateTemperature: (id, data) => request('/temperatures/' + id, { method: 'PUT', body: data }),
+    deleteTemperature: (id) => request('/temperatures/' + id, { method: 'DELETE' }),
+
     // ---- Timeline ----
     getTimeline: (babyId, params) => {
       const q = new URLSearchParams({ baby_id: babyId, ...params }).toString();

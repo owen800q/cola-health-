@@ -31,6 +31,7 @@ function buildSystemPrompt(
   latestGrowth: any,
   pendingVaccines: any[],
   recentFeedStats: any,
+  todayTemps: any[],
 ): string {
   const now = new Date();
   const birthDate = baby?.birth_date ? new Date(baby.birth_date) : null;
@@ -65,6 +66,15 @@ function buildSystemPrompt(
       return `${st.getHours()}:${String(st.getMinutes()).padStart(2, '0')} - ${et.getHours()}:${String(et.getMinutes()).padStart(2, '0')}（${durMin}分鐘）`;
     }
     return `${st.getHours()}:${String(st.getMinutes()).padStart(2, '0')} - 正在睡覺中`;
+  }).join('\n');
+
+  const tempMethodMap: Record<string, string> = { ear: '耳溫', forehead: '額溫', armpit: '腋溫', oral: '口溫', rectal: '肛溫' };
+  const tempSummary = todayTemps.length > 0
+    ? `今日量體溫 ${todayTemps.length} 次${todayTemps.some((t: any) => t.fever) ? '，有發燒記錄' : '，體溫正常'}`
+    : '今日尚未量體溫';
+  const tempDetails = todayTemps.map((t: any) => {
+    const tm = new Date(t.time);
+    return `${tm.getHours()}:${String(tm.getMinutes()).padStart(2, '0')} - ${t.temperature}°C（${tempMethodMap[t.method] || t.method}）${t.fever ? ' ⚠️發燒' : ''}${t.note ? ' (' + t.note + ')' : ''}`;
   }).join('\n');
 
   const growthInfo = latestGrowth
@@ -104,6 +114,10 @@ ${diaperDetails || '（無記錄）'}
 ### 睡眠
 今日總睡眠：約 ${Math.round(sleepTotal / 60 * 10) / 10} 小時
 ${sleepDetails || '（無記錄）'}
+
+### 體溫
+${tempSummary}
+${tempDetails || '（無記錄）'}
 
 ## 生長發育
 ${growthInfo}
@@ -264,7 +278,8 @@ aiRoutes.post('/chat', async (c) => {
   const trimmedHistory = history.slice(-6);
 
   // Gather context from D1 in parallel
-  const [baby, todayFeeds, todayDiapers, todaySleeps, latestGrowth, vaccines, recentFeedStats] =
+  // Use local-timezone day range from frontend for accurate "today" queries
+  const [baby, todayFeeds, todayDiapers, todaySleeps, latestGrowth, vaccines, recentFeedStats, todayTemps] =
     await Promise.all([
       db.prepare('SELECT * FROM baby WHERE id = 1').first(),
       dayFrom && dayTo
@@ -281,11 +296,15 @@ aiRoutes.post('/chat', async (c) => {
       db.prepare(`SELECT COUNT(*) as count, COALESCE(SUM(amount_ml),0) as total_ml,
         COALESCE(ROUND(AVG(amount_ml),0),0) as avg_ml
         FROM feeds WHERE time >= date('now', '-7 days')`).first(),
+      (dayFrom && dayTo
+        ? db.prepare("SELECT time, temperature, method, fever, note FROM temperatures WHERE time >= ? AND time <= ? ORDER BY time DESC").bind(dayFrom, dayTo).all()
+        : db.prepare("SELECT time, temperature, method, fever, note FROM temperatures WHERE date(time) = date('now') ORDER BY time DESC").all()
+      ).catch(() => ({ results: [] })),
     ]);
 
   const systemPrompt = buildSystemPrompt(
     baby, todayFeeds.results, todayDiapers.results, todaySleeps.results,
-    latestGrowth, vaccines.results, recentFeedStats,
+    latestGrowth, vaccines.results, recentFeedStats, todayTemps.results || [],
   );
 
   try {

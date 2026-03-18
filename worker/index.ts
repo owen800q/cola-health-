@@ -15,6 +15,7 @@ import { pushRoutes } from './routes/push';
 import { timelineRoutes } from './routes/timeline';
 import { bottleRoutes } from './routes/bottle';
 import { aiRoutes } from './routes/ai';
+import { temperatureRoutes } from './routes/temperature';
 import { babyRoomsRoutes } from './routes/babyrooms';
 import { handleScheduled } from './scheduled';
 
@@ -50,6 +51,7 @@ app.route('/api/push', pushRoutes);
 app.route('/api/timeline', timelineRoutes);
 app.route('/api/bottles', bottleRoutes);
 app.route('/api/ai', aiRoutes);
+app.route('/api/temperatures', temperatureRoutes);
 app.route('/api/babyrooms', babyRoomsRoutes);
 
 // Serve static files from Workers Sites KV

@@ -137,6 +137,7 @@ const app = createApp({
       feedTotal: 0, feedCount: 0,
       diaperWet: 0, diaperDirty: 0, diaperTotal: 0,
       sleepHours: 0, sleepCount: 0, sleepLongest: 0,
+      tempCount: 0, tempMax: '--', tempFeverCount: 0,
     });
     const recentItems = ref([]);
     const lastFeedTime = ref(null);
@@ -204,6 +205,21 @@ const app = createApp({
     const manualSleepEnd = ref('');
     const sleepQuality = ref('好 · 瞓得穩');
     const sleepNotes = ref('');
+
+    // Temperature page
+    const tempHistory = ref([]);
+    const tempValue = ref(36.5);
+    const tempMethod = ref('ear');
+    const tempTime = ref('');
+    const tempNotes = ref('');
+
+    // Fever thresholds by method (°C)
+    const FEVER_THRESHOLDS = { ear: 38.0, forehead: 37.5, armpit: 37.3, oral: 37.8, rectal: 38.0 };
+    function isFever(temp, method) {
+      var threshold = FEVER_THRESHOLDS[method] || 38.0;
+      return temp >= threshold;
+    }
+    const tempMethodLabel = { ear: '耳溫', forehead: '額溫', armpit: '腋溫', oral: '口溫', rectal: '肛溫' };
 
     // Vaccine page
     const vaccines = ref([]);
@@ -583,11 +599,12 @@ const app = createApp({
       if (!store.babyId) return;
       try {
         const range = localDayRange();
-        const [feeds, diapers, sleeps, timeline] = await Promise.all([
+        const [feeds, diapers, sleeps, timeline, temps] = await Promise.all([
           API.getFeeds(store.babyId, range),
           API.getDiapers(store.babyId, range),
           API.getSleeps(store.babyId, range),
           API.getTimeline(store.babyId, range),
+          API.getTemperatures(store.babyId, range).catch(function() { return []; }),
         ]);
         homeStats.feedCount = feeds?.length || 0;
         homeStats.feedTotal = feeds?.reduce((s, f) => s + (f.amount_ml || 0), 0) || 0;
@@ -611,8 +628,23 @@ const app = createApp({
         });
         homeStats.sleepHours = (totalMin / 60).toFixed(1);
         homeStats.sleepLongest = longestMin;
-        // Build recent items
-        recentItems.value = (timeline || []).slice(0, 8).map(e => {
+        // Temperature stats
+        homeStats.tempCount = temps?.length || 0;
+        homeStats.tempFeverCount = temps?.filter(t => t.fever).length || 0;
+        if (temps?.length) {
+          homeStats.tempMax = Math.max(...temps.map(t => t.temperature)).toFixed(1);
+        } else {
+          homeStats.tempMax = '--';
+        }
+        // Build recent items: merge timeline + temperature records
+        var tempItems = (temps || []).map(t => ({
+          ...t,
+          record_type: 'temperature',
+          time: t.time,
+        }));
+        var allItems = [...(timeline || []), ...tempItems]
+          .sort((a, b) => new Date(b.time) - new Date(a.time));
+        recentItems.value = allItems.slice(0, 10).map(e => {
           let icon = 'milk', cls = 'milk', title = '', detail = '', vol = '';
           if (e.record_type === 'feed') {
             icon = 'i-milk'; cls = 'milk';
@@ -630,6 +662,11 @@ const app = createApp({
               const dur = Math.floor((new Date(e.end_time) - new Date(e.time)) / 1000);
               detail = dur > 60 ? '瞓咗 ' + fmtDurCN(dur) : '';
             } else { icon = 'i-moon'; cls = 'slp'; title = '瞓著咗'; }
+          } else if (e.record_type === 'temperature') {
+            icon = 'i-thermo'; cls = e.fever ? 'temp-fever' : 'temp';
+            title = (tempMethodLabel[e.method] || '耳溫') + (e.fever ? ' · 發燒' : '');
+            detail = e.note || '';
+            vol = e.temperature ? e.temperature + '°C' : '';
           }
           return { id: e.id, type: e.record_type, icon, cls, title, detail, vol, time: fmtTime(e.time), raw: e };
         });
@@ -650,6 +687,9 @@ const app = createApp({
     }
     async function loadSleepHistory() {
       try { sleepHistory.value = await API.getSleeps(store.babyId, viewDayRange()) || []; } catch (e) { console.warn(e); }
+    }
+    async function loadTempHistory() {
+      try { tempHistory.value = await API.getTemperatures(store.babyId, viewDayRange()) || []; } catch (e) { tempHistory.value = []; }
     }
 
     // ===== FEED ACTIONS =====
@@ -713,6 +753,7 @@ const app = createApp({
       if (item.type === 'feed') editFeed(item.raw);
       else if (item.type === 'diaper') editDiaper(item.raw);
       else if (item.type === 'sleep') editSleep(item.raw);
+      else if (item.type === 'temperature') editTemp(item.raw);
     }
 
     function editFeed(item) {
@@ -913,6 +954,82 @@ const app = createApp({
       openSub('as');
     }
 
+    // ===== TEMPERATURE ACTIONS =====
+    function adjTemp(delta) {
+      tempValue.value = Math.round((tempValue.value + delta) * 10) / 10;
+      if (tempValue.value < 34.0) tempValue.value = 34.0;
+      if (tempValue.value > 43.0) tempValue.value = 43.0;
+    }
+
+    async function saveTemp() {
+      if (saving.value) return;
+      saving.value = true;
+      showLoading('儲存中...');
+      try {
+        const now = new Date();
+        if (tempTime.value) {
+          const [h, m] = tempTime.value.split(':');
+          now.setHours(parseInt(h), parseInt(m), 0, 0);
+        }
+        const data = {
+          time: now.toISOString(),
+          temperature: tempValue.value,
+          method: tempMethod.value,
+          note: tempNotes.value || null,
+        };
+        if (editingId.value && editingType.value === 'temperature') {
+          await API.updateTemperature(editingId.value, data);
+        } else {
+          await API.createTemperature(data);
+        }
+        hideLoading();
+        var fever = isFever(tempValue.value, tempMethod.value);
+        showToast(editingId.value ? '記錄已更新' : (fever ? '體溫記錄已儲存 · 注意發燒' : '體溫記錄已儲存'));
+        tempNotes.value = '';
+        editingId.value = null;
+        editingType.value = null;
+        closeSub();
+        loadTempHistory();
+        loadHomeData();
+      } catch (e) { hideLoading(); showToast('儲存失敗'); }
+      finally { saving.value = false; }
+    }
+
+    async function deleteTemp(id) {
+      const ok = await confirmDialog('確認刪除', '刪除後無法恢復');
+      if (!ok) return;
+      if (saving.value) return;
+      saving.value = true;
+      showLoading('刪除中...');
+      try {
+        await API.deleteTemperature(id);
+        hideLoading();
+        showToast('已刪除');
+        loadTempHistory();
+        loadHomeData();
+      } catch (e) { hideLoading(); showToast('刪除失敗'); }
+      finally { saving.value = false; }
+    }
+
+    function editTemp(item) {
+      editingId.value = item.id;
+      editingType.value = 'temperature';
+      const d = new Date(item.time);
+      tempTime.value = pad(d.getHours()) + ':' + pad(d.getMinutes());
+      tempValue.value = item.temperature || 36.5;
+      tempMethod.value = item.method || 'ear';
+      tempNotes.value = item.note || '';
+      openSub('at');
+    }
+
+    function tempFeverText(item) {
+      return item.fever ? '發燒' : '正常';
+    }
+
+    function tempFeverCls(item) {
+      return item.fever ? 'tg-r' : 'tg-g';
+    }
+
     // ===== PROFILE ACTIONS =====
     function loadProfile() {
       if (store.baby) {
@@ -1026,12 +1143,25 @@ const app = createApp({
       };
     });
 
+    // Temperature summary computed
+    const tempSummary = computed(() => {
+      const items = tempHistory.value;
+      const count = items.length;
+      if (count === 0) return { count: 0, max: '--', min: '--', feverCount: 0 };
+      const temps = items.map(t => t.temperature);
+      const max = Math.max(...temps).toFixed(1);
+      const min = Math.min(...temps).toFixed(1);
+      const feverCount = items.filter(t => t.fever).length;
+      return { count, max, min, feverCount };
+    });
+
     // Set default times
     function initTimes() {
       const now = new Date();
       const t = pad(now.getHours()) + ':' + pad(now.getMinutes());
       feedTime.value = t;
       diaperTime.value = t;
+      tempTime.value = t;
     }
 
     // Computed feed/diaper label helpers
@@ -1350,7 +1480,7 @@ const app = createApp({
       // Home
       homeStats, recentItems, nextFeedStr, nextFeedMs, nextFeedProgress, nextFeedOverdue, lastFeedAgo, viewDateStr, prevDay, nextDay,
       // Edit
-      editingId, editingType, editFeed, editDiaper, editSleep, editTimelineItem, saving,
+      editingId, editingType, editFeed, editDiaper, editSleep, editTemp, editTimelineItem, saving,
       // Feed
       feedHistory, feedAmount, feedType, feedTime, feedNotes,
       adjFeedAmount, saveFeed, deleteFeed, feedSummary, feedItemType,
@@ -1363,6 +1493,11 @@ const app = createApp({
       toggleSleep, saveManualSleep, deleteSleep,
       manualSleepStart, manualSleepEnd, sleepQuality, sleepNotes,
       sleepSummaryData,
+      // Temperature
+      tempHistory, tempValue, tempMethod, tempTime, tempNotes,
+      adjTemp, saveTemp, deleteTemp, tempSummary,
+      tempMethodLabel, tempFeverText, tempFeverCls,
+      isFever, loadTempHistory,
       // Vaccines
       vaccines, vaccineGroups, vaccineDesc, vaccineName, vaccineStatusCls, vaccineStatusText, vaccineIcon, vaccineIconColor,
       editVaccine, vaccineEditDate, vaccineEditLocation, openVaccineEdit, saveVaccineEdit,
@@ -1444,6 +1579,7 @@ const app = createApp({
       <div class="gi" @click="openSub('af'); initTimes()"><div class="gi-ico" style="color:var(--blue)"><svg><use href="#i-plus"/></svg></div><span>記錄飲奶</span></div>
       <div class="gi" @click="openSub('ad'); initTimes()"><div class="gi-ico" style="color:var(--green)"><svg><use href="#i-edit"/></svg></div><span>記錄換片</span></div>
       <div class="gi" @click="openSub('as')"><div class="gi-ico" style="color:var(--purple)"><svg><use href="#i-moon"/></svg></div><span>記錄睡眠</span></div>
+      <div class="gi" @click="openSub('at'); initTimes(); loadTempHistory()"><div class="gi-ico" style="color:var(--red)"><svg><use href="#i-thermo"/></svg></div><span>量體溫</span></div>
       <div class="gi" @click="openSub('g6')"><div class="gi-ico" style="color:var(--red)"><svg><use href="#i-warn"/></svg></div><span>蠶豆病</span></div>
       <div class="gi" @click="openSub('he')"><div class="gi-ico" style="color:var(--warn)"><svg><use href="#i-shield"/></svg></div><span>疫苗接種</span></div>
       <div class="gi" @click="openSub('st')"><div class="gi-ico" style="color:var(--teal)"><svg><use href="#i-barchart"/></svg></div><span>統計報告</span></div>
@@ -1639,6 +1775,47 @@ const app = createApp({
     </div>
     <div class="nt np"><span class="nn" style="color:var(--purple)"><svg><use href="#i-moon"/></svg></span><div class="nb2"><strong>睡眠小貼士</strong>新生兒約需 16-17 小時睡眠。可以用「睡眠」tab 嘅大按鈕快速記錄入睡/醒來時間。</div></div>
     <div class="ba"><a href="javascript:;" class="bp" :class="{disabled: saving}" @click="saveManualSleep">{{ editingType === 'sleep' ? '更新記錄' : '儲存記錄' }}</a></div>
+  </div>
+
+  <!-- ===== SUB: TEMPERATURE ===== -->
+  <div class="sub" :class="{active: activeSub === 'at'}" @touchstart="subSwipeStart" @touchmove="subSwipeMove" @touchend="subSwipeEnd">
+    <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">{{ editingType === 'temperature' ? '編輯體溫記錄' : '體溫記錄' }}</span><div class="nb-ph"></div></div>
+    <div class="sb">
+      <div class="sbi"><span class="sbv" style="color:var(--red)">{{ tempSummary.max }}</span><span class="sbl">最高°C</span></div>
+      <div class="sbi"><span class="sbv" style="color:var(--blue)">{{ tempSummary.min }}</span><span class="sbl">最低°C</span></div>
+      <div class="sbi"><span class="sbv" :style="tempSummary.feverCount > 0 ? 'color:var(--red)' : 'color:var(--green)'">{{ tempSummary.feverCount }}</span><span class="sbl">發燒次數</span></div>
+    </div>
+    <div class="st">量體溫</div>
+    <div class="fc">
+      <label class="fi"><span class="fl">量度方式</span><select class="fs" v-model="tempMethod"><option value="ear">耳溫（默認）</option><option value="forehead">額溫</option><option value="armpit">腋溫</option><option value="oral">口溫</option><option value="rectal">肛溫</option></select></label>
+      <label class="fi"><span class="fl">時間</span><input class="fv" type="time" v-model="tempTime"></label>
+      <div class="fi"><span class="fl">體溫(°C)</span><div class="sp"><button @click="adjTemp(-0.1)">−</button><div class="sv" :style="isFever(tempValue, tempMethod) ? 'color:var(--red)' : ''">{{ tempValue.toFixed(1) }}</div><button @click="adjTemp(0.1)">+</button></div></div>
+    </div>
+    <div class="temp-status" :class="isFever(tempValue, tempMethod) ? 'temp-fever-alert' : 'temp-normal-alert'">
+      <svg style="width:20px;height:20px;flex-shrink:0"><use :href="isFever(tempValue, tempMethod) ? '#i-alert' : '#i-check'"/></svg>
+      <span v-if="isFever(tempValue, tempMethod)">體溫偏高，可能發燒。建議持續觀察，如有需要請諮詢醫生。</span>
+      <span v-else>體溫正常。</span>
+    </div>
+    <div class="fc" style="margin-top:16px"><div class="fi"><span class="fl">備註</span><input class="fv" type="text" placeholder="例如：食咗退燒藥" v-model="tempNotes"></div></div>
+    <div class="ba"><a href="javascript:;" class="bp" :class="{disabled: saving}" @click="saveTemp">{{ editingType === 'temperature' ? '更新記錄' : '儲存記錄' }}</a></div>
+    <div class="st" v-if="tempHistory.length">今日體溫記錄</div>
+    <div class="cs" v-if="tempHistory.length">
+      <div class="sw-row" v-for="item in tempHistory" :key="item.id">
+        <div class="sw-c" @touchstart="swStart" @touchmove.prevent="swMove" @touchend="swEnd">
+          <div class="cl" @click="editTemp(item)">
+            <div class="ri" :class="item.fever ? 'temp-fever' : 'temp'"><svg><use href="#i-thermo"/></svg></div>
+            <div class="cb">
+              <div class="ct">{{ tempMethodLabel[item.method] || '耳溫' }} <span :class="tempFeverCls(item)" style="font-size:12px;padding:1px 6px;border-radius:4px">{{ tempFeverText(item) }}</span></div>
+              <div class="cd">{{ fmtTime(item.time) }}<template v-if="item.note"> · {{ item.note }}</template></div>
+            </div>
+            <div class="cr"><div class="cv" :style="item.fever ? 'color:var(--red)' : 'color:var(--green)'">{{ item.temperature }}°C</div></div>
+          </div>
+        </div>
+        <div class="sw-del" @click="deleteTemp(item.id)">刪除</div>
+      </div>
+    </div>
+    <div class="nt ni" style="margin-top:16px"><span class="nn" style="color:var(--red)"><svg><use href="#i-thermo"/></svg></span><div class="nb2"><strong>發燒判斷標準</strong>耳溫 ≥38.0°C、額溫 ≥37.5°C、腋溫 ≥37.3°C、口溫 ≥37.8°C、肛溫 ≥38.0°C。3個月以下嬰兒體溫 ≥38°C 應立即就醫。</div></div>
+    <div style="height:32px"></div>
   </div>
 
   <!-- ===== SUB: PROFILE ===== -->
@@ -1847,6 +2024,10 @@ const app = createApp({
       <div class="dual-card"><div class="dv" style="color:var(--purple)">{{ sleepSummaryData.totalHours }}<span style="font-size:14px;font-weight:400">h</span></div><div class="dl">今日睡眠</div></div>
       <div class="dual-card"><div class="dv" style="color:var(--purple)">{{ sleepSummaryData.longestHours }}<span style="font-size:14px;font-weight:400">h</span></div><div class="dl">最長連續</div></div>
     </div>
+    <div class="dual-row">
+      <div class="dual-card"><div class="dv" :style="tempSummary.feverCount > 0 ? 'color:var(--red)' : 'color:var(--green)'">{{ tempSummary.max }}<span style="font-size:14px;font-weight:400">°C</span></div><div class="dl">今日最高體溫</div></div>
+      <div class="dual-card"><div class="dv" :style="tempSummary.feverCount > 0 ? 'color:var(--red)' : 'color:var(--green)'">{{ tempSummary.feverCount }}<span style="font-size:14px;font-weight:400">次</span></div><div class="dl">發燒次數</div></div>
+    </div>
     <div style="height:32px"></div>
   </div>
 
@@ -1865,6 +2046,7 @@ const app = createApp({
       <div class="fi"><span class="fl">換片記錄</span><label class="tog"><input type="checkbox" checked><span class="tsl"></span></label></div>
       <div class="fi"><span class="fl">睡眠記錄</span><label class="tog"><input type="checkbox" checked><span class="tsl"></span></label></div>
       <div class="fi"><span class="fl">成長數據</span><label class="tog"><input type="checkbox" checked><span class="tsl"></span></label></div>
+      <div class="fi"><span class="fl">體溫記錄</span><label class="tog"><input type="checkbox" checked><span class="tsl"></span></label></div>
     </div>
     <div class="btn-row"><a href="javascript:;" class="bp bp-blue" @click="showToast('PDF 已生成')">生成 PDF</a></div>
     <div style="padding:0 16px"><a href="javascript:;" class="bp-outline" @click="showToast('已分享')">分享給醫生</a></div>
