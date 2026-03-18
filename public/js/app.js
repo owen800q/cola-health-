@@ -177,6 +177,7 @@ const app = createApp({
     // Edit state
     const editingId = ref(null);
     const editingType = ref(null); // 'feed', 'diaper', 'sleep'
+    const editingOriginalTime = ref(null);
 
     // Feed page
     const feedHistory = ref([]);
@@ -663,7 +664,9 @@ const app = createApp({
       saving.value = true;
       showLoading('儲存中...');
       try {
-        const now = new Date();
+        const now = (editingId.value && editingType.value === 'feed' && editingOriginalTime.value)
+          ? new Date(editingOriginalTime.value)
+          : new Date();
         if (feedTime.value) {
           const [h, m] = feedTime.value.split(':');
           now.setHours(parseInt(h), parseInt(m), 0, 0);
@@ -686,6 +689,7 @@ const app = createApp({
         feedNotes.value = '';
         editingId.value = null;
         editingType.value = null;
+        editingOriginalTime.value = null;
         closeSub();
         loadFeedHistory();
         loadHomeData();
@@ -718,6 +722,7 @@ const app = createApp({
     function editFeed(item) {
       editingId.value = item.id;
       editingType.value = 'feed';
+      editingOriginalTime.value = item.time;
       const d = new Date(item.time);
       feedTime.value = pad(d.getHours()) + ':' + pad(d.getMinutes());
       feedAmount.value = item.amount_ml || 60;
@@ -735,7 +740,9 @@ const app = createApp({
       saving.value = true;
       showLoading('儲存中...');
       try {
-        const now = new Date();
+        const now = (editingId.value && editingType.value === 'diaper' && editingOriginalTime.value)
+          ? new Date(editingOriginalTime.value)
+          : new Date();
         if (diaperTime.value) {
           const [h, m] = diaperTime.value.split(':');
           now.setHours(parseInt(h), parseInt(m), 0, 0);
@@ -758,6 +765,7 @@ const app = createApp({
         diaperNotes.value = '';
         editingId.value = null;
         editingType.value = null;
+        editingOriginalTime.value = null;
         closeSub();
         loadDiaperHistory();
         loadHomeData();
@@ -784,6 +792,7 @@ const app = createApp({
     function editDiaper(item) {
       editingId.value = item.id;
       editingType.value = 'diaper';
+      editingOriginalTime.value = item.time;
       const d = new Date(item.time);
       diaperTime.value = pad(d.getHours()) + ':' + pad(d.getMinutes());
       diaperType.value = item.type || 'pee';
