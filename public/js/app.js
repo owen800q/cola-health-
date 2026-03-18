@@ -636,13 +636,8 @@ const app = createApp({
         } else {
           homeStats.tempMax = '--';
         }
-        // Build recent items: merge timeline + temperature records
-        var tempItems = (temps || []).map(t => ({
-          ...t,
-          record_type: 'temperature',
-          time: t.time,
-        }));
-        var allItems = [...(timeline || []), ...tempItems]
+        // Build recent items from timeline (already includes temperatures)
+        var allItems = [...(timeline || [])]
           .sort((a, b) => new Date(b.time) - new Date(a.time));
         recentItems.value = allItems.slice(0, 10).map(e => {
           let icon = 'milk', cls = 'milk', title = '', detail = '', vol = '';
