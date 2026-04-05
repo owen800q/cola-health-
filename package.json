@@ -6,7 +6,8 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "db:init": "wrangler d1 execute baby-tracker-db --local --file=worker/db/schema.sql",
-    "db:init:remote": "wrangler d1 execute baby-tracker-db --file=worker/db/schema.sql"
+    "db:init:remote": "wrangler d1 execute baby-tracker-db --file=worker/db/schema.sql",
+    "db:migrate:remote": "wrangler d1 execute baby-tracker-db --file=worker/db/migrations/0001_add_ai_memories.sql"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240620.0",
