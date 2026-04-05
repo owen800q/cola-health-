@@ -2139,7 +2139,7 @@ const app = createApp({
     <div class="nb">
       <span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span>
       <span class="nb-t">問 AI 助手</span>
-      <span class="nb-a" @click="showMemories = true" title="AI 記憶"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M12 2a9 9 0 0 0-9 9c0 3.9 2.5 7.2 6 8.4V21a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-1.6c3.5-1.2 6-4.5 6-8.4a9 9 0 0 0-9-9zm-2 16v1h4v-1h-4zm2-14a7 7 0 0 1 7 7c0 3-1.9 5.6-4.5 6.6l-.5.2V17h-4v-.2l-.5-.2A7 7 0 0 1 5 11a7 7 0 0 1 7-7zm0 3a1 1 0 0 0-1 1v3H9a1 1 0 1 0 0 2h2v1a1 1 0 1 0 2 0v-1h2a1 1 0 1 0 0-2h-2V8a1 1 0 0 0-1-1z" fill="currentColor"/></svg></span>
+      <span class="nb-a" @click="showMemories = true" title="AI 記憶"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2C9.5 2 7.5 4 7.5 6.5c0 .5.1 1 .2 1.4C5.6 8.8 4 10.7 4 13c0 2.2 1.4 4 3.4 4.7.1 1.3 1.2 2.3 2.6 2.3h4c1.4 0 2.5-1 2.6-2.3C18.6 17 20 15.2 20 13c0-2.3-1.6-4.2-3.7-5.1.1-.4.2-.9.2-1.4C16.5 4 14.5 2 12 2z"/><path d="M12 2v18M8 8.5c1.3.5 2.5.5 4 0M12 8.5c1.3.5 2.5.5 4 0M8.5 13H12M12 13h3.5"/></svg></span>
       <span class="nb-a" @click="clearChat()" v-if="chatMessages.length"><svg><use href="#i-trash"/></svg></span>
       <div class="nb-ph" v-else></div>
     </div>
