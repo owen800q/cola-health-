@@ -122,6 +122,13 @@
     getBabyRoomDistricts: () => request('/babyrooms/districts'),
     refreshBabyRooms: () => request('/babyrooms/refresh', { method: 'POST' }),
 
+    // ---- AI Memories ----
+    getMemories: () => request('/memories'),
+    createMemory: (data) => request('/memories', { method: 'POST', body: data }),
+    updateMemory: (id, data) => request('/memories/' + id, { method: 'PUT', body: data }),
+    deleteMemory: (id) => request('/memories/' + id, { method: 'DELETE' }),
+    extractMemories: (userMsg, aiMsg) => request('/memories/extract', { method: 'POST', body: { userMessage: userMsg, aiMessage: aiMsg } }),
+
     // ---- AI Chat (streaming) ----
     chatAI: async function (message, history, image, dayRange, provider, onChunk, onDone, onError) {
       try {

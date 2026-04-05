@@ -362,3 +362,14 @@ INSERT OR IGNORE INTO babycare_rooms (name, name_en, district, region, address, 
 INSERT OR IGNORE INTO babycare_rooms (name, name_en, district, region, address, type, facilities) VALUES ('港鐵迪士尼站', 'MTR Disneyland Resort Station', '離島', '新界', '大嶼山迪士尼', '交通', '["換片台","洗手盆"]');
 INSERT OR IGNORE INTO babycare_rooms (name, name_en, district, region, address, type, facilities) VALUES ('香港國際機場', 'Hong Kong International Airport', '離島', '新界', '赤鱲角翔天路1號', '交通', '["換片台","哺乳椅","洗手盆","熱水供應","微波爐"]');
 INSERT OR IGNORE INTO babycare_rooms (name, name_en, district, region, address, type, facilities) VALUES ('北大嶼山醫院', 'North Lantau Hospital', '離島', '新界', '東涌松仁路8號', '醫院', '["換片台","哺乳椅","洗手盆","熱水供應"]');
+
+-- ===== AI Persistent Memory =====
+CREATE TABLE IF NOT EXISTS ai_memories (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  content TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT 'general',
+  source_message TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_memories_category ON ai_memories(category);

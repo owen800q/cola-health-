@@ -17,6 +17,7 @@ import { bottleRoutes } from './routes/bottle';
 import { aiRoutes } from './routes/ai';
 import { temperatureRoutes } from './routes/temperature';
 import { babyRoomsRoutes } from './routes/babyrooms';
+import { memoryRoutes } from './routes/memory';
 import { handleScheduled } from './scheduled';
 
 export type Bindings = {
@@ -53,6 +54,7 @@ app.route('/api/bottles', bottleRoutes);
 app.route('/api/ai', aiRoutes);
 app.route('/api/temperatures', temperatureRoutes);
 app.route('/api/babyrooms', babyRoomsRoutes);
+app.route('/api/memories', memoryRoutes);
 
 // Serve static files from Workers Sites KV
 app.get('*', serveStatic({ root: './', manifest }));

@@ -450,7 +450,14 @@ const app = createApp({
             if (el) el.scrollTop = el.scrollHeight;
           });
         },
-        function onDone() { chatLoading.value = false; },
+        function onDone() {
+          chatLoading.value = false;
+          // Fire-and-forget memory extraction
+          var msgs = chatMessages.value.slice(-2);
+          if (msgs.length === 2 && msgs[0].role === 'user' && msgs[1].role === 'assistant' && msgs[1].content) {
+            API.extractMemories(msgs[0].content, msgs[1].content).catch(function() {});
+          }
+        },
         function onError(err) {
           chatLoading.value = false;
           chatError.value = err;
@@ -517,6 +524,42 @@ const app = createApp({
       chatImage.value = null;
       chatInput.value = '';
     }
+
+    // ===== AI PERSISTENT MEMORY =====
+    const memories = ref([]);
+    const showMemories = ref(false);
+    const memoryLoading = ref(false);
+
+    const memoryCategoryLabels = {
+      preference: '偏好', health: '健康', allergy: '過敏',
+      routine: '作息', development: '發育', general: '其他'
+    };
+    function memoryCategoryLabel(cat) { return memoryCategoryLabels[cat] || cat; }
+
+    async function loadMemories() {
+      memoryLoading.value = true;
+      try { memories.value = await API.getMemories(); } catch(e) { console.error(e); }
+      memoryLoading.value = false;
+    }
+    async function deleteMemoryItem(id) {
+      try {
+        await API.deleteMemory(id);
+        memories.value = memories.value.filter(function(m) { return m.id !== id; });
+        showToast('已刪除');
+      } catch(e) { console.error(e); }
+    }
+    async function editMemoryItem(m) {
+      var newContent = prompt('編輯記憶：', m.content);
+      if (newContent === null || newContent.trim() === '' || newContent === m.content) return;
+      try {
+        var updated = await API.updateMemory(m.id, { content: newContent.trim() });
+        var idx = memories.value.findIndex(function(x) { return x.id === m.id; });
+        if (idx >= 0) memories.value[idx] = updated;
+        showToast('已更新');
+      } catch(e) { console.error(e); }
+    }
+
+    watch(showMemories, function(v) { if (v) loadMemories(); });
 
     // Settings / Profile
     const profileForm = reactive({
@@ -1503,6 +1546,8 @@ const app = createApp({
       chatMessages, chatInput, chatImage, chatLoading, chatError,
       sendChat, onChatImagePick, clearChatImage, clearChat,
       chatProvider, setChatProvider, renderMd, autoGrowInput,
+      memories, showMemories, memoryLoading, memoryCategoryLabel,
+      loadMemories, deleteMemoryItem, editMemoryItem,
       // Profile
       profileForm, saveProfile, loadProfile,
       // Dialog
@@ -2094,6 +2139,7 @@ const app = createApp({
     <div class="nb">
       <span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span>
       <span class="nb-t">問 AI 助手</span>
+      <span class="nb-a" @click="showMemories = true" title="AI 記憶"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M12 2a9 9 0 0 0-9 9c0 3.9 2.5 7.2 6 8.4V21a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-1.6c3.5-1.2 6-4.5 6-8.4a9 9 0 0 0-9-9zm-2 16v1h4v-1h-4zm2-14a7 7 0 0 1 7 7c0 3-1.9 5.6-4.5 6.6l-.5.2V17h-4v-.2l-.5-.2A7 7 0 0 1 5 11a7 7 0 0 1 7-7zm0 3a1 1 0 0 0-1 1v3H9a1 1 0 1 0 0 2h2v1a1 1 0 1 0 2 0v-1h2a1 1 0 1 0 0-2h-2V8a1 1 0 0 0-1-1z" fill="currentColor"/></svg></span>
       <span class="nb-a" @click="clearChat()" v-if="chatMessages.length"><svg><use href="#i-trash"/></svg></span>
       <div class="nb-ph" v-else></div>
     </div>
@@ -2140,6 +2186,37 @@ const app = createApp({
       </div>
     </div>
   </div>
+
+  <!-- ===== AI MEMORY POPUP ===== -->
+  <van-popup v-model:show="showMemories" position="bottom" round :style="{height:'70%'}">
+    <div class="memory-panel">
+      <div class="nb" style="position:sticky;top:0;z-index:1;background:#fff;">
+        <span class="nb-t">AI 記憶</span>
+        <span class="nb-a" @click="showMemories = false">關閉</span>
+      </div>
+      <div class="memory-body">
+        <div v-if="memoryLoading" style="text-align:center;padding:2rem;color:#999;">載入中...</div>
+        <div v-else-if="!memories.length" style="text-align:center;padding:2rem;color:#999;">
+          <div style="font-size:2rem;margin-bottom:.5rem;">🧠</div>
+          <div>AI 暫時冇記住任何資訊</div>
+          <div style="font-size:.85rem;margin-top:.5rem;color:#bbb;">同 AI 對話時，重要資訊會自動記住</div>
+        </div>
+        <div v-else class="memory-list">
+          <div v-for="m in memories" :key="m.id" class="memory-item">
+            <div class="memory-item-top">
+              <span class="memory-cat" :class="'memory-cat-' + m.category">{{ memoryCategoryLabel(m.category) }}</span>
+              <span class="memory-date">{{ m.created_at ? m.created_at.slice(0, 10) : '' }}</span>
+            </div>
+            <div class="memory-text">{{ m.content }}</div>
+            <div class="memory-actions">
+              <button class="memory-act-btn" @click="editMemoryItem(m)">編輯</button>
+              <button class="memory-act-btn memory-act-del" @click="deleteMemoryItem(m.id)">刪除</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </van-popup>
 
   <!-- ===== FULLSCREEN PHOTO OVERLAY ===== -->
   <div v-if="bottlePhotoZoom" @click="bottlePhotoZoom = null" style="position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.9);display:flex;align-items:center;justify-content:center;cursor:pointer">

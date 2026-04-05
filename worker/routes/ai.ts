@@ -32,6 +32,7 @@ function buildSystemPrompt(
   pendingVaccines: any[],
   recentFeedStats: any,
   todayTemps: any[],
+  memories: any[] = [],
 ): string {
   const now = new Date();
   const birthDate = baby?.birth_date ? new Date(baby.birth_date) : null;
@@ -125,7 +126,9 @@ ${growthInfo}
 ## 疫苗
 ${vaccineInfo}
 
-## 回答規則
+${memories.length > 0 ? `## 記憶（用戶偏好和重要資訊）
+${memories.map((m: any) => `- [${m.category}] ${m.content}`).join('\n')}
+` : ''}## 回答規則
 1. 請用繁體中文（香港用語）回答
 2. 回答要簡潔、實用、溫暖
 3. 根據寶寶的實際年齡和數據給出針對性建議
@@ -279,7 +282,8 @@ aiRoutes.post('/chat', async (c) => {
 
   // Gather context from D1 in parallel
   // Use local-timezone day range from frontend for accurate "today" queries
-  const [baby, todayFeeds, todayDiapers, todaySleeps, latestGrowth, vaccines, recentFeedStats, todayTemps] =
+  const memoryLimit = provider === 'cloudflare' ? 20 : 50;
+  const [baby, todayFeeds, todayDiapers, todaySleeps, latestGrowth, vaccines, recentFeedStats, todayTemps, memoriesResult] =
     await Promise.all([
       db.prepare('SELECT * FROM baby WHERE id = 1').first(),
       dayFrom && dayTo
@@ -300,11 +304,14 @@ aiRoutes.post('/chat', async (c) => {
         ? db.prepare("SELECT time, temperature, method, fever, note FROM temperatures WHERE time >= ? AND time <= ? ORDER BY time DESC").bind(dayFrom, dayTo).all()
         : db.prepare("SELECT time, temperature, method, fever, note FROM temperatures WHERE date(time) = date('now') ORDER BY time DESC").all()
       ).catch(() => ({ results: [] })),
+      db.prepare('SELECT content, category FROM ai_memories ORDER BY created_at DESC LIMIT ?').bind(memoryLimit).all()
+        .catch(() => ({ results: [] })),
     ]);
 
   const systemPrompt = buildSystemPrompt(
     baby, todayFeeds.results, todayDiapers.results, todaySleeps.results,
     latestGrowth, vaccines.results, recentFeedStats, todayTemps.results || [],
+    memoriesResult.results || [],
   );
 
   try {
