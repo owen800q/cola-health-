@@ -127,6 +127,17 @@ CREATE TABLE IF NOT EXISTS bottle_photos (
 );
 CREATE INDEX IF NOT EXISTS idx_bottle_photos_slot ON bottle_photos(slot_id);
 
+-- Medication records (用藥紀錄)
+CREATE TABLE IF NOT EXISTS medication_records (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  time TEXT NOT NULL,
+  medication_name TEXT NOT NULL,
+  dosage TEXT,
+  unit TEXT DEFAULT 'ml',
+  note TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_feeds_time ON feeds(time DESC);
 CREATE INDEX IF NOT EXISTS idx_diapers_time ON diapers(time DESC);
@@ -134,6 +145,7 @@ CREATE INDEX IF NOT EXISTS idx_sleeps_start ON sleeps(start_time DESC);
 CREATE INDEX IF NOT EXISTS idx_vaccines_status ON vaccines(status);
 CREATE INDEX IF NOT EXISTS idx_growth_date ON growth(date DESC);
 CREATE INDEX IF NOT EXISTS idx_temperatures_time ON temperatures(time DESC);
+CREATE INDEX IF NOT EXISTS idx_medication_records_time ON medication_records(time DESC);
 
 -- Seed default baby profile
 INSERT OR IGNORE INTO baby (id, name, gender, birth_date, birth_weight, birth_height)

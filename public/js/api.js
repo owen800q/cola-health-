@@ -122,6 +122,15 @@
     getBabyRoomDistricts: () => request('/babyrooms/districts'),
     refreshBabyRooms: () => request('/babyrooms/refresh', { method: 'POST' }),
 
+    // ---- Medications ----
+    getMedicationRecords: (babyId, params) => {
+      const q = new URLSearchParams({ baby_id: babyId, ...params }).toString();
+      return request('/medications?' + q);
+    },
+    createMedicationRecord: (data) => request('/medications', { method: 'POST', body: data }),
+    updateMedicationRecord: (id, data) => request('/medications/' + id, { method: 'PUT', body: data }),
+    deleteMedicationRecord: (id) => request('/medications/' + id, { method: 'DELETE' }),
+
     // ---- AI Chat (streaming) ----
     chatAI: async function (message, history, image, dayRange, provider, onChunk, onDone, onError) {
       try {

@@ -686,6 +686,9 @@ const app = createApp({
     async function loadTempHistory() {
       try { tempHistory.value = await API.getTemperatures(store.babyId, viewDayRange()) || []; } catch (e) { tempHistory.value = []; }
     }
+    async function loadMedHistory() {
+      try { medHistory.value = await API.getMedicationRecords(store.babyId, viewDayRange()) || []; } catch (e) { medHistory.value = []; }
+    }
 
     // ===== FEED ACTIONS =====
     function adjFeedAmount(delta) {
@@ -1025,6 +1028,84 @@ const app = createApp({
       return item.fever ? 'tg-r' : 'tg-g';
     }
 
+    // ===== MEDICATION ACTIONS =====
+    function adjMedDosage(delta) {
+      medDosage.value = Math.round((medDosage.value + delta) * 10) / 10;
+      if (medDosage.value < 0.1) medDosage.value = 0.1;
+    }
+
+    async function saveMedRecord() {
+      if (saving.value) return;
+      if (!medName.value.trim()) { showToast('請輸入藥物名稱'); return; }
+      saving.value = true;
+      showLoading('儲存中...');
+      try {
+        const now = new Date();
+        if (medTime.value) {
+          const [h, m] = medTime.value.split(':');
+          now.setHours(parseInt(h), parseInt(m), 0, 0);
+        }
+        const data = {
+          time: now.toISOString(),
+          medication_name: medName.value.trim(),
+          dosage: medDosage.value,
+          unit: medUnit.value,
+          note: medNotes.value || null,
+        };
+        if (editingId.value && editingType.value === 'medication') {
+          await API.updateMedicationRecord(editingId.value, data);
+        } else {
+          await API.createMedicationRecord(data);
+        }
+        // Remember last values
+        localStorage.setItem('lastMedName', medName.value.trim());
+        localStorage.setItem('lastMedDosage', String(medDosage.value));
+        localStorage.setItem('lastMedUnit', medUnit.value);
+        hideLoading();
+        showToast(editingId.value ? '記錄已更新' : '用藥記錄已儲存');
+        medNotes.value = '';
+        editingId.value = null;
+        editingType.value = null;
+        closeSub();
+        loadMedHistory();
+        loadHomeData();
+      } catch (e) { hideLoading(); showToast('儲存失敗'); }
+      finally { saving.value = false; }
+    }
+
+    async function deleteMedRecord(id) {
+      const ok = await confirmDialog('確認刪除', '刪除後無法恢復');
+      if (!ok) return;
+      if (saving.value) return;
+      saving.value = true;
+      showLoading('刪除中...');
+      try {
+        await API.deleteMedicationRecord(id);
+        hideLoading();
+        showToast('已刪除');
+        loadMedHistory();
+        loadHomeData();
+      } catch (e) { hideLoading(); showToast('刪除失敗'); }
+      finally { saving.value = false; }
+    }
+
+    function editMedRecord(item) {
+      editingId.value = item.id;
+      editingType.value = 'medication';
+      const d = new Date(item.time);
+      medTime.value = pad(d.getHours()) + ':' + pad(d.getMinutes());
+      medName.value = item.medication_name || '';
+      medDosage.value = parseFloat(item.dosage) || 1;
+      medUnit.value = item.unit || 'ml';
+      medNotes.value = item.note || '';
+      openSub('am');
+    }
+
+    const medSummary = computed(() => {
+      const items = medHistory.value;
+      return { count: items.length };
+    });
+
     // ===== PROFILE ACTIONS =====
     function loadProfile() {
       if (store.baby) {
@@ -1138,6 +1219,14 @@ const app = createApp({
       };
     });
 
+    // Medication page
+    const medHistory = ref([]);
+    const medName = ref(localStorage.getItem('lastMedName') || '');
+    const medDosage = ref(parseFloat(localStorage.getItem('lastMedDosage')) || 1);
+    const medUnit = ref(localStorage.getItem('lastMedUnit') || 'ml');
+    const medTime = ref('');
+    const medNotes = ref('');
+
     // Temperature summary computed
     const tempSummary = computed(() => {
       const items = tempHistory.value;
@@ -1157,6 +1246,7 @@ const app = createApp({
       feedTime.value = t;
       diaperTime.value = t;
       tempTime.value = t;
+      medTime.value = t;
     }
 
     // Computed feed/diaper label helpers
@@ -1475,7 +1565,7 @@ const app = createApp({
       // Home
       homeStats, recentItems, nextFeedStr, nextFeedMs, nextFeedProgress, nextFeedOverdue, lastFeedAgo, viewDateStr, prevDay, nextDay,
       // Edit
-      editingId, editingType, editFeed, editDiaper, editSleep, editTemp, editTimelineItem, saving,
+      editingId, editingType, editFeed, editDiaper, editSleep, editTemp, editMedRecord, editTimelineItem, saving,
       // Feed
       feedHistory, feedAmount, feedType, feedTime, feedNotes,
       adjFeedAmount, saveFeed, deleteFeed, feedSummary, feedItemType,
@@ -1493,6 +1583,9 @@ const app = createApp({
       adjTemp, saveTemp, deleteTemp, tempSummary,
       tempMethodLabel, tempFeverText, tempFeverCls,
       isFever, loadTempHistory,
+      // Medication
+      medHistory, medName, medDosage, medUnit, medTime, medNotes,
+      adjMedDosage, saveMedRecord, deleteMedRecord, editMedRecord, medSummary, loadMedHistory,
       // Vaccines
       vaccines, vaccineGroups, vaccineDesc, vaccineName, vaccineStatusCls, vaccineStatusText, vaccineIcon, vaccineIconColor,
       editVaccine, vaccineEditDate, vaccineEditLocation, openVaccineEdit, saveVaccineEdit,
@@ -1582,6 +1675,7 @@ const app = createApp({
       <div class="gi" @click="openSub('rm')"><div class="gi-ico" style="color:var(--orange)"><svg><use href="#i-bell"/></svg></div><span>提醒設定</span></div>
       <div class="gi" @click="openSub('bt'); loadBottleSlots()"><div class="gi-ico" style="color:var(--teal)"><svg><use href="#i-bottle"/></svg></div><span>奶瓶組裝</span></div>
       <div class="gi" @click="openSub('ai')"><div class="gi-ico" style="color:var(--purple)"><svg><use href="#i-chat"/></svg></div><span>問 AI</span></div>
+      <div class="gi" @click="openSub('am'); initTimes(); loadMedHistory()"><div class="gi-ico" style="color:var(--orange)"><svg><use href="#i-pill"/></svg></div><span>用藥紀錄</span></div>
       <div class="gi" @click="openMbRooms()"><div class="gi-ico" style="color:var(--green)"><svg><use href="#i-mappin"/></svg></div><span>母嬰室</span></div>
     </div>
     <div class="st">今日記錄</div>
@@ -1810,6 +1904,41 @@ const app = createApp({
       </div>
     </div>
     <div class="nt ni" style="margin-top:16px"><span class="nn" style="color:var(--red)"><svg><use href="#i-thermo"/></svg></span><div class="nb2"><strong>發燒判斷標準</strong>耳溫 ≥38.0°C、額溫 ≥37.5°C、腋溫 ≥37.3°C、口溫 ≥37.8°C、肛溫 ≥38.0°C。3個月以下嬰兒體溫 ≥38°C 應立即就醫。</div></div>
+    <div style="height:32px"></div>
+  </div>
+
+  <!-- ===== SUB: MEDICATION ===== -->
+  <div class="sub" :class="{active: activeSub === 'am'}" @touchstart="subSwipeStart" @touchmove="subSwipeMove" @touchend="subSwipeEnd">
+    <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">{{ editingType === 'medication' ? '編輯用藥記錄' : '用藥紀錄' }}</span><div class="nb-ph"></div></div>
+    <div class="sb">
+      <div class="sbi"><span class="sbv" style="color:var(--orange)">{{ medSummary.count }}</span><span class="sbl">今日用藥次數</span></div>
+    </div>
+    <div class="st">記錄用藥</div>
+    <div class="fc">
+      <label class="fi"><span class="fl">藥物名稱</span><input class="fv" type="text" placeholder="輸入藥物名稱" v-model="medName"></label>
+      <label class="fi"><span class="fl">時間</span><input class="fv" type="time" v-model="medTime"></label>
+      <div class="fi"><span class="fl">劑量</span><div class="sp"><button @click="adjMedDosage(-0.5)">−</button><div class="sv">{{ medDosage }}</div><button @click="adjMedDosage(0.5)">+</button></div></div>
+      <label class="fi"><span class="fl">單位</span><select class="fs" v-model="medUnit"><option value="ml">ml</option><option value="mg">mg</option><option value="滴">滴</option><option value="粒">粒</option><option value="包">包</option><option value="匙">匙</option></select></label>
+    </div>
+    <div class="fc" style="margin-top:16px"><div class="fi"><span class="fl">備註</span><input class="fv" type="text" placeholder="例如：飯後服用" v-model="medNotes"></div></div>
+    <div class="ba"><a href="javascript:;" class="bp" :class="{disabled: saving}" @click="saveMedRecord">{{ editingType === 'medication' ? '更新記錄' : '儲存記錄' }}</a></div>
+    <div class="st" v-if="medHistory.length">今日用藥記錄</div>
+    <div class="cs" v-if="medHistory.length">
+      <div class="sw-row" v-for="item in medHistory" :key="item.id">
+        <div class="sw-c" @touchstart="swStart" @touchmove.prevent="swMove" @touchend="swEnd">
+          <div class="cl" @click="editMedRecord(item)">
+            <div class="ri med"><svg><use href="#i-pill"/></svg></div>
+            <div class="cb">
+              <div class="ct">{{ item.medication_name }}</div>
+              <div class="cd">{{ fmtTime(item.time) }}<template v-if="item.note"> · {{ item.note }}</template></div>
+            </div>
+            <div class="cr"><div class="cv" style="color:var(--orange)">{{ item.dosage }}{{ item.unit }}</div></div>
+          </div>
+        </div>
+        <div class="sw-del" @click="deleteMedRecord(item.id)">刪除</div>
+      </div>
+    </div>
+    <div class="nt np" style="margin-top:16px"><span class="nn" style="color:var(--orange)"><svg><use href="#i-pill"/></svg></span><div class="nb2"><strong>用藥提示</strong>請遵照醫生指示用藥。記錄用藥時間和劑量有助於追蹤寶寶的用藥情況。</div></div>
     <div style="height:32px"></div>
   </div>
 
