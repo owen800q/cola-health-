@@ -662,6 +662,11 @@ const app = createApp({
             title = (tempMethodLabel[e.method] || '耳溫') + (e.fever ? ' · 發燒' : '');
             detail = e.note || '';
             vol = e.temperature ? e.temperature + '°C' : '';
+          } else if (e.record_type === 'medication') {
+            icon = 'i-pill'; cls = 'med';
+            title = e.medication_name;
+            detail = e.note || '';
+            vol = e.dosage ? e.dosage + (e.unit || 'ml') : '';
           }
           return { id: e.id, type: e.record_type, icon, cls, title, detail, vol, time: fmtTime(e.time), raw: e };
         });
