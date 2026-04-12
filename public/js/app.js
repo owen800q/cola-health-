@@ -170,6 +170,41 @@ const app = createApp({
       if (diff < 60) return diff + ' 分鐘前';
       var h = Math.floor(diff / 60), m = diff % 60;
       return h + ' 小時' + (m > 0 ? ' ' + m + ' 分鐘' : '') + '前';
+
+    // Medication countdown (next dose)
+    const lastMedTime = ref(null);
+    const medIntervalMinutes = ref(parseInt(localStorage.getItem('medIntervalMinutes')) || 240);
+    const nextMedTime = computed(() => {
+      if (!lastMedTime.value) return null;
+      return new Date(lastMedTime.value.getTime() + medIntervalMinutes.value * 60000);
+    });
+    const nextMedStr = computed(() => {
+      if (!nextMedTime.value) return '';
+      return pad(nextMedTime.value.getHours()) + ':' + pad(nextMedTime.value.getMinutes());
+    });
+    const nextMedMs = computed(() => {
+      if (!nextMedTime.value) return 0;
+      return Math.max(0, nextMedTime.value.getTime() - now.value);
+    });
+    const nextMedProgress = computed(() => {
+      if (!lastMedTime.value) return 0;
+      var interval = medIntervalMinutes.value * 60000;
+      var elapsed = now.value - lastMedTime.value.getTime();
+      return Math.min(100, Math.max(0, (elapsed / interval) * 100));
+    });
+    const nextMedOverdue = computed(() => nextMedMs.value <= 0 && !!lastMedTime.value);
+    const lastMedAgo = computed(() => {
+      if (!lastMedTime.value) return '';
+      var diff = Math.floor((now.value - lastMedTime.value.getTime()) / 60000);
+      if (diff < 1) return '剛剛';
+      if (diff < 60) return diff + ' 分鐘前';
+      var h = Math.floor(diff / 60), m = diff % 60;
+      return h + ' 小時' + (m > 0 ? ' ' + m + ' 分鐘' : '') + '前';
+    });
+    function setMedInterval(val) {
+      medIntervalMinutes.value = val;
+      localStorage.setItem('medIntervalMinutes', String(val));
+    }
     });
 
     // Global saving lock
@@ -599,12 +634,13 @@ const app = createApp({
       if (!store.babyId) return;
       try {
         const range = localDayRange();
-        const [feeds, diapers, sleeps, timeline, temps] = await Promise.all([
+        const [feeds, diapers, sleeps, timeline, temps, meds] = await Promise.all([
           API.getFeeds(store.babyId, range),
           API.getDiapers(store.babyId, range),
           API.getSleeps(store.babyId, range),
           API.getTimeline(store.babyId, range),
           API.getTemperatures(store.babyId, range).catch(function() { return []; }),
+          API.getMedicationRecords(store.babyId, range).catch(function() { return []; }),
         ]);
         homeStats.feedCount = feeds?.length || 0;
         homeStats.feedTotal = feeds?.reduce((s, f) => s + (f.amount_ml || 0), 0) || 0;
@@ -635,6 +671,13 @@ const app = createApp({
           homeStats.tempMax = Math.max(...temps.map(t => t.temperature)).toFixed(1);
         } else {
           homeStats.tempMax = '--';
+        }
+        // Medication last time
+        if (meds?.length) {
+          var sortedMeds = [...meds].sort((a, b) => new Date(b.time) - new Date(a.time));
+          lastMedTime.value = new Date(sortedMeds[0].time);
+        } else {
+          lastMedTime.value = null;
         }
         // Build recent items from timeline (already includes temperatures)
         var allItems = [...(timeline || [])]
@@ -1591,6 +1634,8 @@ const app = createApp({
       // Medication
       medHistory, medName, medDosage, medUnit, medTime, medNotes,
       adjMedDosage, saveMedRecord, deleteMedRecord, editMedRecord, medSummary, loadMedHistory,
+      lastMedTime, lastMedAgo, nextMedStr, nextMedMs, nextMedProgress, nextMedOverdue,
+      medIntervalMinutes, setMedInterval,
       // Vaccines
       vaccines, vaccineGroups, vaccineDesc, vaccineName, vaccineStatusCls, vaccineStatusText, vaccineIcon, vaccineIconColor,
       editVaccine, vaccineEditDate, vaccineEditLocation, openVaccineEdit, saveVaccineEdit,
@@ -1666,6 +1711,22 @@ const app = createApp({
           </div>
         </div>
         <van-progress :percentage="nextFeedProgress" :show-pivot="false" stroke-width="3" :color="nextFeedOverdue ? 'var(--red)' : 'var(--blue)'" track-color="rgba(0,0,0,0.04)" />
+      </div>
+      <div class="nf-section" v-if="lastMedAgo" @click="openSub('am'); initTimes(); loadMedHistory()">
+        <div class="nf-row">
+          <div class="nf-left">
+            <div class="nf-icon" :class="{ overdue: nextMedOverdue }" style="background:rgba(245,166,35,0.12);color:var(--orange)"><svg><use href="#i-pill"/></svg></div>
+            <div class="nf-info">
+              <span class="nf-label">{{ nextMedOverdue ? '已超時' : '下次食藥' }}</span>
+              <span class="nf-sub">上次：{{ lastMedAgo }}</span>
+            </div>
+          </div>
+          <div class="nf-right">
+            <span class="nf-time" :class="{ overdue: nextMedOverdue }" :style="!nextMedOverdue ? 'color:var(--orange)' : ''">{{ nextMedStr }}</span>
+            <van-button size="mini" type="warning" round plain @click.stop="openSub('am'); initTimes(); loadMedHistory()">記錄</van-button>
+          </div>
+        </div>
+        <van-progress :percentage="nextMedProgress" :show-pivot="false" stroke-width="3" :color="nextMedOverdue ? 'var(--red)' : 'var(--orange)'" track-color="rgba(0,0,0,0.04)" />
       </div>
     </div>
     <div class="gd">
@@ -1942,6 +2003,10 @@ const app = createApp({
         </div>
         <div class="sw-del" @click="deleteMedRecord(item.id)">刪除</div>
       </div>
+    </div>
+    <div class="st">食藥間隔</div>
+    <div class="fc">
+      <label class="fi"><span class="fl">間隔時間</span><select class="fs" :value="medIntervalMinutes" @change="setMedInterval(parseInt($event.target.value))"><option value="120">2 小時</option><option value="180">3 小時</option><option value="240">4 小時</option><option value="360">6 小時</option><option value="480">8 小時</option><option value="720">12 小時</option><option value="1440">24 小時</option></select></label>
     </div>
     <div class="nt np" style="margin-top:16px"><span class="nn" style="color:var(--orange)"><svg><use href="#i-pill"/></svg></span><div class="nb2"><strong>用藥提示</strong>請遵照醫生指示用藥。記錄用藥時間和劑量有助於追蹤寶寶的用藥情況。</div></div>
     <div style="height:32px"></div>
