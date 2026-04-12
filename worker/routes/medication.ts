@@ -3,6 +3,23 @@ import type { Bindings } from '../index';
 
 export const medicationRoutes = new Hono<{ Bindings: Bindings }>();
 
+// Ensure table exists on first request
+medicationRoutes.use('/*', async (c, next) => {
+  const db = c.env.DB;
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS medication_records (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      time TEXT NOT NULL,
+      medication_name TEXT NOT NULL,
+      dosage TEXT,
+      unit TEXT DEFAULT 'ml',
+      note TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    )
+  `).run();
+  await next();
+});
+
 // GET /api/medications?date=YYYY-MM-DD or ?from=ISO&to=ISO
 medicationRoutes.get('/', async (c) => {
   const db = c.env.DB;
