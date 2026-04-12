@@ -170,6 +170,7 @@ const app = createApp({
       if (diff < 60) return diff + ' 分鐘前';
       var h = Math.floor(diff / 60), m = diff % 60;
       return h + ' 小時' + (m > 0 ? ' ' + m + ' 分鐘' : '') + '前';
+    });
 
     // Medication countdown (next dose)
     const lastMedTime = ref(null);
@@ -205,7 +206,6 @@ const app = createApp({
       medIntervalMinutes.value = val;
       localStorage.setItem('medIntervalMinutes', String(val));
     }
-    });
 
     // Global saving lock
     const saving = ref(false);
