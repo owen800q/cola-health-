@@ -475,6 +475,15 @@ label.fi { cursor: pointer; }
 .mb-fc .mb-tag { font-size: 11px; padding: 3px 8px; }
 
 /* ===== Growth Curve ===== */
+.gc-sum { margin: 12px 16px 0; padding: 12px 14px; border-radius: 10px; border: 1px solid transparent; }
+.gc-sum-green { background: rgba(9,187,7,0.08); border-color: rgba(9,187,7,0.25); color: #0a7a08; }
+.gc-sum-warn { background: rgba(245,166,35,0.10); border-color: rgba(245,166,35,0.30); color: #a05a00; }
+.gc-sum-red { background: rgba(244,53,48,0.08); border-color: rgba(244,53,48,0.25); color: #b22722; }
+.gc-sum-hd { display: flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 600; }
+.gc-sum-ic { width: 18px; height: 18px; flex-shrink: 0; }
+.gc-sum-lb { line-height: 1.2; }
+.gc-sum-mt { font-size: 13px; margin-top: 4px; opacity: 0.85; }
+.gc-sum-tp { font-size: 13px; margin-top: 4px; opacity: 0.9; line-height: 1.45; }
 .gc-tabs { display: flex; gap: 8px; padding: 12px 16px 0; }
 .gc-tab { flex: 1; text-align: center; padding: 10px 0; font-size: 15px; font-weight: 500; color: var(--t2); background: var(--card); border-radius: 8px; cursor: pointer; border: 1px solid var(--t4); }
 .gc-tab.active { background: var(--blue); color: #fff; border-color: var(--blue); }

@@ -352,6 +352,67 @@ const app = createApp({
       } catch (e) { console.warn('Load growth ref:', e); growthRef.value = null; }
     }
 
+    // Classify a measurement against WHO percentile reference at given month age.
+    // Returns { band, label, tip, tone, range, pct } or null if out of range / missing data.
+    function classifyGrowthValue(value, monthAge, metric) {
+      if (value == null || monthAge == null || monthAge < 0) return null;
+      var ref = growthRef.value;
+      if (!ref) return null;
+      var series = ref[metric];
+      if (!series || !series.length) return null;
+      var maxM = ref.maxMonth || 60;
+      if (monthAge > maxM) return null;
+      var m0 = Math.min(maxM, Math.floor(monthAge));
+      var m1 = Math.min(maxM, m0 + 1);
+      var t = monthAge - m0;
+      var r0 = series[m0]; var r1 = series[m1];
+      var pct = [0,1,2,3,4].map(function (i) { return r0[i] + (r1[i] - r0[i]) * t; });
+      var unit = metric === 'weight' ? 'kg' : 'cm';
+      var noun = metric === 'weight' ? '體重' : '身高';
+      if (value < pct[0]) {
+        return { band: 'low', tone: 'red', label: noun + '偏低',
+          tip: '低於第3百分位（P3 = ' + pct[0].toFixed(1) + unit + '），建議諮詢醫生' };
+      }
+      if (value < pct[1]) {
+        return { band: 'mild-low', tone: 'warn', label: '略為偏低',
+          tip: '介於第3至15百分位，屬正常範圍下限，繼續觀察' };
+      }
+      if (value <= pct[3]) {
+        return { band: 'normal', tone: 'green', label: '發育正常',
+          tip: '介於第15至85百分位，位於健康標準範圍內' };
+      }
+      if (value <= pct[4]) {
+        return { band: 'mild-high', tone: 'warn', label: '略為偏高',
+          tip: '介於第85至97百分位，屬正常範圍上限，繼續觀察' };
+      }
+      return { band: 'high', tone: 'red', label: noun + '偏高',
+        tip: '高於第97百分位（P97 = ' + pct[4].toFixed(1) + unit + '），建議諮詢醫生' };
+    }
+
+    // Summary banner for the latest record matching the currently-selected metric
+    const latestGrowthSummary = computed(() => {
+      if (!growthRef.value || !store.baby?.birth_date || !growthRecords.value.length) return null;
+      var metric = growthMetric.value;
+      var recs = growthRecords.value.slice().sort(function (a, b) { return a.date < b.date ? 1 : -1; });
+      for (var i = 0; i < recs.length; i++) {
+        var r = recs[i];
+        var v = r[metric];
+        if (v == null) continue;
+        var m = ageInMonths(r.date, store.baby.birth_date);
+        var c = classifyGrowthValue(v, m, metric);
+        if (!c) continue;
+        return {
+          date: r.date,
+          value: v,
+          unit: metric === 'weight' ? 'kg' : 'cm',
+          metricLabel: metric === 'weight' ? '體重' : '身高',
+          monthStr: m == null ? '' : (m < 1 ? Math.round(m * 30) + '日' : m.toFixed(1) + '月'),
+          cls: c,
+        };
+      }
+      return null;
+    });
+
     async function saveGrowthRecord() {
       if (saving.value) return;
       if (!growthForm.date) { showToast('請選擇日期'); return; }
@@ -374,7 +435,19 @@ const app = createApp({
           await API.createGrowth(data);
         }
         hideLoading();
-        showToast(growthEditingId.value ? '記錄已更新' : '記錄已儲存');
+        // Build summary message (shown on toast + persistent banner)
+        var monthAge = ageInMonths(data.date, store.baby && store.baby.birth_date);
+        var msg = growthEditingId.value ? '記錄已更新' : '記錄已儲存';
+        var parts = [];
+        if (data.weight != null) {
+          var cw = classifyGrowthValue(data.weight, monthAge, 'weight');
+          if (cw) parts.push('體重 ' + cw.label);
+        }
+        if (data.height != null) {
+          var ch = classifyGrowthValue(data.height, monthAge, 'height');
+          if (ch) parts.push('身高 ' + ch.label);
+        }
+        showToast(parts.length ? msg + ' · ' + parts.join('、') : msg);
         resetGrowthForm();
         var list = await API.getGrowth(store.babyId);
         growthRecords.value = Array.isArray(list) ? list : [];
@@ -1712,8 +1785,8 @@ const app = createApp({
       // Growth curve
       growthRecords, growthRef, growthMetric, growthForm, growthEditingId,
       growthSeries, growthYRange, growthChartPoints, growthChartLine, growthXTicks, growthYTicks,
-      growthMetricLabel, loadGrowth, saveGrowthRecord, editGrowthRecord, deleteGrowthRecord,
-      resetGrowthForm, growthChartPath, growthBandPath, fmtDateCN,
+      growthMetricLabel, latestGrowthSummary, loadGrowth, saveGrowthRecord, editGrowthRecord,
+      deleteGrowthRecord, resetGrowthForm, growthChartPath, growthBandPath, fmtDateCN,
       // Bottle Assembly
       bottleSlots, bottlePhotoZoom, loadBottleSlots, addBottleSlot, removeBottleSlot,
       takeBottlePhoto, pickBottlePhoto, removeBottlePhoto, fmtTimeAgo,
@@ -2118,6 +2191,16 @@ const app = createApp({
     <div class="gc-tabs">
       <span class="gc-tab" :class="{active: growthMetric==='weight'}" @click="growthMetric='weight'">體重</span>
       <span class="gc-tab" :class="{active: growthMetric==='height'}" @click="growthMetric='height'">身高</span>
+    </div>
+
+    <!-- Summary banner: current status based on latest record -->
+    <div v-if="latestGrowthSummary" class="gc-sum" :class="'gc-sum-' + latestGrowthSummary.cls.tone">
+      <div class="gc-sum-hd">
+        <svg class="gc-sum-ic"><use :href="latestGrowthSummary.cls.tone === 'green' ? '#i-check' : '#i-alert'"/></svg>
+        <span class="gc-sum-lb">{{ latestGrowthSummary.cls.label }}</span>
+      </div>
+      <div class="gc-sum-mt">{{ fmtDateCN(latestGrowthSummary.date) }} · {{ latestGrowthSummary.monthStr }} · {{ latestGrowthSummary.metricLabel }} {{ latestGrowthSummary.value }}{{ latestGrowthSummary.unit }}</div>
+      <div class="gc-sum-tp">{{ latestGrowthSummary.cls.tip }}</div>
     </div>
 
     <!-- Chart -->
