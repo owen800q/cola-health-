@@ -473,3 +473,23 @@ label.fi { cursor: pointer; }
 .mb-tag.active { background: var(--green); color: #fff; border-color: var(--green); }
 .mb-fc { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 16px 4px; }
 .mb-fc .mb-tag { font-size: 11px; padding: 3px 8px; }
+
+/* ===== 輔食 (Solid food) feature ===== */
+/* food-tinted round icon chip (matches .ri.milk / .ri.poo family) */
+.ri.food { background: #FFF1E0; color: var(--orange); }
+/* uploaded illustration used as the 記錄輔食 home-grid tile icon */
+.gi .gi-ico.gi-img { width: 26px; height: 26px; border-radius: 6px; object-fit: cover; display: block; }
+/* texture / category seg hint line */
+.seg-hint { font-size: 11px; color: var(--t3); margin: -8px 16px 0; }
+/* reaction emoji segmented — slightly taller for the glyphs */
+.seg.seg-emoji .seg-btn { padding: 7px 2px; font-size: 13px; line-height: 1.3; }
+.seg.seg-emoji .seg-btn .em { font-size: 18px; display: block; margin-bottom: 2px; }
+/* allergy-symptom chips */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 16px 0; }
+.chip { font-size: 13px; padding: 7px 14px; border-radius: 16px; background: var(--card); color: var(--t2); border: 1px solid var(--t4); cursor: pointer; user-select: none; }
+.chip.on { background: #FFEDED; color: var(--red); border-color: rgba(244,53,48,0.35); font-weight: 600; }
+/* food-log row: status block on the right */
+.food-status { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+.food-status .fs-sub { font-size: 11px; color: var(--t3); }
+/* intro note inside the food list */
+.food-intro { margin: 16px 16px 4px; }
