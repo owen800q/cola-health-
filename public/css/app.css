@@ -477,8 +477,11 @@ label.fi { cursor: pointer; }
 /* ===== 輔食 (Solid food) feature ===== */
 /* food-tinted round icon chip (matches .ri.milk / .ri.poo family) */
 .ri.food { background: #FFF1E0; color: var(--orange); }
-/* uploaded illustration used as the 記錄輔食 home-grid tile icon */
-.gi .gi-ico.gi-img { width: 26px; height: 26px; border-radius: 6px; object-fit: cover; display: block; }
+/* uploaded illustration used as the 記錄輔食 home-grid tile icon.
+   Rendered at 32px (vs the 26px line glyphs) to match optical weight since the
+   artwork has built-in padding; negative top + 3px bottom margin keep its centre
+   (y≈27px) and the label baseline (y≈46px) aligned with the other tiles. */
+.gi .gi-ico.gi-img { width: 32px; height: 32px; object-fit: contain; display: block; margin-top: -3px; margin-bottom: 3px; }
 /* texture / category seg hint line */
 .seg-hint { font-size: 11px; color: var(--t3); margin: -8px 16px 0; }
 /* reaction emoji segmented — slightly taller for the glyphs */
