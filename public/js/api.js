@@ -58,6 +58,16 @@
     updateSleep: (id, data) => request('/sleeps/' + id, { method: 'PUT', body: data }),
     deleteSleep: (id) => request('/sleeps/' + id, { method: 'DELETE' }),
 
+    // ---- Solid Foods (輔食) ----
+    getSolidFoods: (babyId, params) => {
+      const q = new URLSearchParams({ baby_id: babyId, ...params }).toString();
+      return request('/solidfoods?' + q);
+    },
+    getSolidFoodLog: () => request('/solidfoods/foods'),
+    createSolidFood: (data) => request('/solidfoods', { method: 'POST', body: data }),
+    updateSolidFood: (id, data) => request('/solidfoods/' + id, { method: 'PUT', body: data }),
+    deleteSolidFood: (id) => request('/solidfoods/' + id, { method: 'DELETE' }),
+
     // ---- Growth ----
     getGrowth: (babyId) => {
       const q = new URLSearchParams({ baby_id: babyId }).toString();

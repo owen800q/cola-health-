@@ -662,6 +662,12 @@ const app = createApp({
             title = (tempMethodLabel[e.method] || '耳溫') + (e.fever ? ' · 發燒' : '');
             detail = e.note || '';
             vol = e.temperature ? e.temperature + '°C' : '';
+          } else if (e.record_type === 'solidfood') {
+            icon = 'i-food'; cls = 'food';
+            title = e.name || '輔食';
+            detail = [e.category, e.texture, e.amount].filter(Boolean).join(' · ');
+            if (e.note) detail += (detail ? ' · ' : '') + e.note;
+            vol = '';
           }
           return { id: e.id, type: e.record_type, icon, cls, title, detail, vol, time: fmtTime(e.time), raw: e };
         });
@@ -749,6 +755,7 @@ const app = createApp({
       else if (item.type === 'diaper') editDiaper(item.raw);
       else if (item.type === 'sleep') editSleep(item.raw);
       else if (item.type === 'temperature') editTemp(item.raw);
+      else if (item.type === 'solidfood') openSolidForm(item.raw);
     }
 
     function editFeed(item) {
@@ -1183,6 +1190,160 @@ const app = createApp({
       return parts.join('、') || '';
     }
 
+    // ===== SOLID FOOD (輔食) =====
+    const SF_CATEGORIES = ['穀物糊', '蔬菜', '水果', '肉類', '魚類', '蛋類', '豆類', '乳製品', '其他'];
+    const SF_TEXTURES = ['泥蓉', '糊狀', '碎粒', '條狀'];
+    const SF_AMOUNTS = ['食晒', '食一半', '食少少', '拒絕'];
+    const SF_REACTIONS = [{ v: '鍾意', em: '😊' }, { v: '一般', em: '😐' }, { v: '唔鍾意', em: '😣' }];
+    const SF_SYMPTOMS = ['出疹', '嘴腫', '嘔吐', '腹瀉', '氣促', '煩躁哭鬧'];
+    const SF_STATUS_META = { safe: { label: '安全', cls: 'tg-g' }, watch: { label: '觀察中', cls: 'tg-a' }, alert: { label: '注意', cls: 'tg-r' } };
+
+    const solidTab = ref('records');     // 'records' | 'foods'
+    const solidHistory = ref([]);
+    const solidFoodLog = ref([]);
+    const solidForm = reactive({ id: null, time: '', category: '蔬菜', name: '', texture: '泥蓉', first_try: false, amount: '食一半', reaction: '一般', abnormal: false, symptoms: [], note: '' });
+
+    const solidSummary = computed(() => {
+      const items = solidHistory.value;
+      return {
+        count: items.length,
+        newCount: items.filter(r => r.first_try).length,
+        reject: items.filter(r => r.amount === '拒絕').length,
+      };
+    });
+    const solidTodayLabel = computed(() => { const d = new Date(); return (d.getMonth() + 1) + '月' + d.getDate() + '日'; });
+
+    function reactionEmoji(v) { const r = SF_REACTIONS.find(x => x.v === v); return r ? r.em : ''; }
+    function fmtSolidSince(iso) {
+      if (!iso) return '';
+      const d = new Date(iso), today = new Date();
+      if (d.toDateString() === today.toDateString()) return '今日';
+      return (d.getMonth() + 1) + '月' + d.getDate() + '日';
+    }
+    function parseSymptoms(s) {
+      if (Array.isArray(s)) return s.slice();
+      if (typeof s === 'string' && s) { try { const a = JSON.parse(s); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
+      return [];
+    }
+
+    async function loadSolidHistory() {
+      try { solidHistory.value = await API.getSolidFoods(store.babyId, localDayRange()) || []; } catch (e) { console.warn(e); }
+    }
+    async function loadSolidFoodLog() {
+      try { solidFoodLog.value = await API.getSolidFoodLog() || []; } catch (e) { solidFoodLog.value = []; }
+    }
+
+    function openSolidList() {
+      solidTab.value = 'records';
+      openSub('sl');
+      loadSolidHistory();
+      loadSolidFoodLog();
+    }
+
+    let solidFormReturn = null;
+    function openSolidForm(rec) {
+      solidFormReturn = activeSub.value;   // 'sl' when opened from the list, null when from the home timeline
+      if (rec) {
+        editingId.value = rec.id;
+        editingType.value = 'solidfood';
+        const d = new Date(rec.time);
+        solidForm.id = rec.id;
+        solidForm.time = pad(d.getHours()) + ':' + pad(d.getMinutes());
+        solidForm.category = rec.category || '蔬菜';
+        solidForm.name = rec.name || '';
+        solidForm.texture = rec.texture || '泥蓉';
+        solidForm.first_try = !!rec.first_try;
+        solidForm.amount = rec.amount || '食一半';
+        solidForm.reaction = rec.reaction || '一般';
+        solidForm.abnormal = !!rec.abnormal;
+        solidForm.symptoms = parseSymptoms(rec.symptoms);
+        solidForm.note = rec.note || '';
+      } else {
+        editingId.value = null;
+        editingType.value = null;
+        const now = new Date();
+        solidForm.id = null;
+        solidForm.time = pad(now.getHours()) + ':' + pad(now.getMinutes());
+        solidForm.category = '蔬菜';
+        solidForm.name = '';
+        solidForm.texture = '泥蓉';
+        solidForm.first_try = false;
+        solidForm.amount = '食一半';
+        solidForm.reaction = '一般';
+        solidForm.abnormal = false;
+        solidForm.symptoms = [];
+        solidForm.note = '';
+      }
+      activeSub.value = 'sf';
+    }
+    function closeSolidForm() {
+      editingId.value = null;
+      editingType.value = null;
+      if (solidFormReturn === 'sl') {
+        activeSub.value = 'sl';
+        loadSolidHistory();
+        loadSolidFoodLog();
+      } else {
+        activeSub.value = null;
+        loadHomeData();
+      }
+    }
+    function toggleSolidSymptom(s) {
+      const i = solidForm.symptoms.indexOf(s);
+      if (i >= 0) solidForm.symptoms.splice(i, 1); else solidForm.symptoms.push(s);
+    }
+    const solidCanSave = computed(() => (solidForm.name || '').trim().length > 0);
+
+    async function saveSolidFood() {
+      if (!solidCanSave.value) return showToast('請輸入食物名稱');
+      if (saving.value) return;
+      saving.value = true;
+      showLoading('儲存中...');
+      try {
+        const now = new Date();
+        if (solidForm.time) { const [h, m] = solidForm.time.split(':'); now.setHours(parseInt(h), parseInt(m), 0, 0); }
+        const data = {
+          time: now.toISOString(),
+          name: solidForm.name.trim(),
+          category: solidForm.category || null,
+          texture: solidForm.texture || null,
+          first_try: solidForm.first_try ? 1 : 0,
+          amount: solidForm.amount || null,
+          reaction: solidForm.reaction || null,
+          abnormal: solidForm.abnormal ? 1 : 0,
+          symptoms: solidForm.abnormal ? solidForm.symptoms : [],
+          note: solidForm.note || null,
+        };
+        const wasEditing = editingId.value && editingType.value === 'solidfood';
+        if (wasEditing) {
+          await API.updateSolidFood(editingId.value, data);
+        } else {
+          await API.createSolidFood(data);
+        }
+        hideLoading();
+        showToast(wasEditing ? '記錄已更新' : '輔食記錄已儲存');
+        closeSolidForm();
+      } catch (e) { hideLoading(); showToast('儲存失敗'); }
+      finally { saving.value = false; }
+    }
+
+    async function deleteSolidFood(id) {
+      const ok = await confirmDialog('確認刪除', '刪除後無法恢復');
+      if (!ok) return;
+      if (saving.value) return;
+      saving.value = true;
+      showLoading('刪除中...');
+      try {
+        await API.deleteSolidFood(id);
+        hideLoading();
+        showToast('已刪除');
+        loadSolidHistory();
+        loadSolidFoodLog();
+        loadHomeData();
+      } catch (e) { hideLoading(); showToast('刪除失敗'); }
+      finally { saving.value = false; }
+    }
+
     // ===== SWIPE TO DELETE =====
     let swX0 = 0;
     function swStart(e) {
@@ -1493,6 +1654,11 @@ const app = createApp({
       adjTemp, saveTemp, deleteTemp, tempSummary,
       tempMethodLabel, tempFeverText, tempFeverCls,
       isFever, loadTempHistory,
+      // Solid food (輔食)
+      solidTab, solidHistory, solidFoodLog, solidForm, solidSummary, solidTodayLabel,
+      SF_CATEGORIES, SF_TEXTURES, SF_AMOUNTS, SF_REACTIONS, SF_SYMPTOMS, SF_STATUS_META,
+      reactionEmoji, fmtSolidSince, openSolidList, openSolidForm, closeSolidForm,
+      toggleSolidSymptom, solidCanSave, saveSolidFood, deleteSolidFood,
       // Vaccines
       vaccines, vaccineGroups, vaccineDesc, vaccineName, vaccineStatusCls, vaccineStatusText, vaccineIcon, vaccineIconColor,
       editVaccine, vaccineEditDate, vaccineEditLocation, openVaccineEdit, saveVaccineEdit,
@@ -1575,6 +1741,7 @@ const app = createApp({
       <div class="gi" @click="openSub('ad'); initTimes()"><div class="gi-ico" style="color:var(--green)"><svg><use href="#i-edit"/></svg></div><span>記錄換片</span></div>
       <div class="gi" @click="openSub('as')"><div class="gi-ico" style="color:var(--purple)"><svg><use href="#i-moon"/></svg></div><span>記錄睡眠</span></div>
       <div class="gi" @click="openSub('at'); initTimes(); loadTempHistory()"><div class="gi-ico" style="color:var(--red)"><svg><use href="#i-thermo"/></svg></div><span>量體溫</span></div>
+      <div class="gi" @click="openSolidList()"><div class="gi-ico" style="color:var(--orange)"><svg><use href="#i-food"/></svg></div><span>記錄輔食</span></div>
       <div class="gi" @click="openSub('g6')"><div class="gi-ico" style="color:var(--red)"><svg><use href="#i-warn"/></svg></div><span>蠶豆病</span></div>
       <div class="gi" @click="openSub('he')"><div class="gi-ico" style="color:var(--warn)"><svg><use href="#i-shield"/></svg></div><span>疫苗接種</span></div>
       <div class="gi" @click="openSub('st')"><div class="gi-ico" style="color:var(--teal)"><svg><use href="#i-barchart"/></svg></div><span>統計報告</span></div>
@@ -1707,6 +1874,7 @@ const app = createApp({
       <div class="cl" @click="openSub('he')"><span class="ci" style="color:var(--green)"><svg><use href="#i-shield"/></svg></span><div class="cb"><div class="ct">疫苗接種計劃</div><div class="cd">香港兒童免疫接種計劃</div></div><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
       <div class="cl" @click="openSub('hs')"><span class="ci" style="color:var(--blue)"><svg><use href="#i-health"/></svg></span><div class="cb"><div class="ct">幼兒健康及發展綜合計劃</div></div><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
       <div class="cl" @click="openSub('g6')"><span class="ci" style="color:var(--red)"><svg><use href="#i-warn"/></svg></span><div class="cb"><div class="ct">蠶豆病須知</div></div><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
+      <div class="cl" @click="openSolidList()"><span class="ci" style="color:var(--orange)"><svg><use href="#i-food"/></svg></span><div class="cb"><div class="ct">輔食記錄</div><div class="cd">副食品、首次嘗試及過敏觀察</div></div><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
       <div class="cl" @click="openMbRooms()"><span class="ci" style="color:var(--green)"><svg><use href="#i-mappin"/></svg></span><div class="cb"><div class="ct">母嬰室搜尋</div><div class="cd">全港母嬰室及育嬰間位置</div></div><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
     </div>
     <div class="st">資料</div>
@@ -1811,6 +1979,101 @@ const app = createApp({
     </div>
     <div class="nt ni" style="margin-top:16px"><span class="nn" style="color:var(--red)"><svg><use href="#i-thermo"/></svg></span><div class="nb2"><strong>發燒判斷標準</strong>耳溫 ≥38.0°C、額溫 ≥37.5°C、腋溫 ≥37.3°C、口溫 ≥37.8°C、肛溫 ≥38.0°C。3個月以下嬰兒體溫 ≥38°C 應立即就醫。</div></div>
     <div style="height:32px"></div>
+  </div>
+
+  <!-- ===== SUB: SOLID FOOD LIST (輔食記錄) ===== -->
+  <div class="sub" :class="{active: activeSub === 'sl'}" @touchstart="subSwipeStart" @touchmove="subSwipeMove" @touchend="subSwipeEnd">
+    <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">輔食記錄</span><span class="nb-a" @click="openSolidForm()"><svg><use href="#i-plus"/></svg></span></div>
+    <div class="seg">
+      <div class="seg-btn" :class="{active: solidTab === 'records'}" @click="solidTab = 'records'">今日記錄</div>
+      <div class="seg-btn" :class="{active: solidTab === 'foods'}" @click="solidTab = 'foods'">食物清單</div>
+    </div>
+
+    <!-- 今日記錄 -->
+    <div v-show="solidTab === 'records'">
+      <div class="st" style="display:flex;justify-content:space-between"><span>今日 · {{ solidTodayLabel }}</span><span style="color:var(--t3)">{{ solidSummary.count }} 項</span></div>
+      <div class="sb">
+        <div class="sbi"><span class="sbv" style="color:var(--orange)">{{ solidSummary.count }}</span><span class="sbl">今日輔食次數</span></div>
+        <div class="sbi"><span class="sbv" style="color:var(--green)">{{ solidSummary.newCount }}</span><span class="sbl">新食物種類</span></div>
+        <div class="sbi"><span class="sbv" style="color:var(--t2)">{{ solidSummary.reject }}</span><span class="sbl">拒絕次數</span></div>
+      </div>
+      <div class="cs" v-if="solidHistory.length">
+        <div class="sw-row" v-for="item in solidHistory" :key="item.id">
+          <div class="sw-c" @touchstart="swStart" @touchmove.prevent="swMove" @touchend="swEnd">
+            <div class="cl" @click="openSolidForm(item)">
+              <div class="ri food"><svg><use href="#i-food"/></svg></div>
+              <div class="cb">
+                <div class="ct">{{ item.name }} <span class="em">{{ reactionEmoji(item.reaction) }}</span><span class="tg tg-b" v-if="item.first_try">首次</span><span class="tg tg-r" v-if="item.abnormal">過敏</span></div>
+                <div class="cd">{{ item.category }} · {{ item.texture }} · {{ item.amount }}<template v-if="item.note"> · {{ item.note }}</template></div>
+              </div>
+              <div class="cr"><div class="cm">{{ fmtTime(item.time) }}</div></div>
+            </div>
+          </div>
+          <div class="sw-del" @click="deleteSolidFood(item.id)">刪除</div>
+        </div>
+      </div>
+      <div class="empty-state" v-else><svg><use href="#i-food"/></svg><p>今日暫無輔食記錄</p></div>
+    </div>
+
+    <!-- 食物清單 -->
+    <div v-show="solidTab === 'foods'">
+      <div class="nt nc" style="margin-top:12px"><span class="nn" style="color:var(--blue)"><svg><use href="#i-info"/></svg></span><div class="nb2"><strong>已試食物清單</strong>每款新食物連續試 3 日先轉下一款，方便追蹤過敏源。觀察中 ＝ 3 日觀察期內。</div></div>
+      <div class="st">已試食物（{{ solidFoodLog.length }} 款）</div>
+      <div class="cs" v-if="solidFoodLog.length">
+        <div class="cl" v-for="f in solidFoodLog" :key="f.name">
+          <div class="ri food"><svg><use href="#i-food"/></svg></div>
+          <div class="cb">
+            <div class="ct">{{ f.name }}</div>
+            <div class="cd">{{ f.category }} · 首次 {{ fmtSolidSince(f.first_time) }}<template v-if="f.status === 'alert' && f.reaction"> · 曾有{{ f.reaction }}</template></div>
+          </div>
+          <div class="cr food-status">
+            <span class="tg" :class="SF_STATUS_META[f.status].cls" style="margin-left:0">{{ SF_STATUS_META[f.status].label }}</span>
+            <span class="fs-sub" v-if="f.status === 'watch'">第 {{ f.day }} / 3 日</span>
+          </div>
+        </div>
+      </div>
+      <div class="empty-state" v-else><svg><use href="#i-food"/></svg><p>暫未有已試食物</p></div>
+    </div>
+    <div style="height:24px"></div>
+  </div>
+
+  <!-- ===== SUB: ADD / EDIT SOLID FOOD (輔食) ===== -->
+  <div class="sub" :class="{active: activeSub === 'sf'}" @touchstart="subSwipeStart" @touchmove="subSwipeMove" @touchend="subSwipeEnd">
+    <div class="nb"><span class="nb-back" @click="closeSolidForm()"><svg><use href="#i-back"/></svg></span><span class="nb-t">{{ editingType === 'solidfood' ? '編輯輔食記錄' : '新增輔食記錄' }}</span><div class="nb-ph"></div></div>
+
+    <div class="st">輔食資料</div>
+    <div class="fc">
+      <label class="fi"><span class="fl">時間</span><input class="fv" type="time" v-model="solidForm.time"></label>
+      <label class="fi"><span class="fl">食物分類</span><select class="fs" v-model="solidForm.category"><option v-for="c in SF_CATEGORIES" :key="c">{{ c }}</option></select></label>
+      <label class="fi"><span class="fl">食物名稱</span><input class="fv" type="text" v-model="solidForm.name" placeholder="例如：蘋果蓉、米糊、南瓜蓉"></label>
+    </div>
+
+    <div class="nt nw" v-if="baby && baby.has_g6pd"><span class="nn" style="color:var(--red)"><svg><use href="#i-warn"/></svg></span><div class="nb2"><strong>蠶豆病提示</strong>{{ babyName }}有蠶豆病：避免蠶豆及蠶豆製品，亦要留意含人工色素／添加劑嘅食品。</div></div>
+
+    <div class="st">質地</div>
+    <div class="seg"><div class="seg-btn" v-for="t in SF_TEXTURES" :key="t" :class="{active: solidForm.texture === t}" @click="solidForm.texture = t">{{ t }}</div></div>
+    <div class="seg-hint">條狀 ＝ 手指食物（BLW），讓寶寶自己抓住進食。</div>
+
+    <div class="fc" style="margin-top:16px"><label class="fi"><span class="fl">首次嘗試</span><label class="tog"><input type="checkbox" v-model="solidForm.first_try"><span class="tsl"></span></label></label></div>
+    <div class="nt ni" v-if="solidForm.first_try"><span class="nn" style="color:var(--warn)"><svg><use href="#i-info"/></svg></span><div class="nb2"><strong>首次食新食物</strong>同一種新食物連續試 3 日，每日留意有冇過敏反應，無問題先轉下一款。</div></div>
+
+    <div class="st">食量 / 接受程度</div>
+    <div class="seg"><div class="seg-btn" v-for="a in SF_AMOUNTS" :key="a" :class="{active: solidForm.amount === a}" @click="solidForm.amount = a">{{ a }}</div></div>
+
+    <div class="st">反應</div>
+    <div class="seg seg-emoji"><div class="seg-btn" v-for="r in SF_REACTIONS" :key="r.v" :class="{active: solidForm.reaction === r.v}" @click="solidForm.reaction = r.v"><span class="em">{{ r.em }}</span>{{ r.v }}</div></div>
+
+    <div class="fc" style="margin-top:16px"><label class="fi"><span class="fl" style="width:9em">有冇異常反應？</span><label class="tog"><input type="checkbox" v-model="solidForm.abnormal"><span class="tsl"></span></label></label></div>
+    <template v-if="solidForm.abnormal">
+      <div class="st">過敏徵狀（可選多項）</div>
+      <div class="chips"><span class="chip" v-for="s in SF_SYMPTOMS" :key="s" :class="{on: solidForm.symptoms.includes(s)}" @click="toggleSolidSymptom(s)">{{ s }}</span></div>
+      <div class="nt nw" style="margin-top:14px"><span class="nn" style="color:var(--red)"><svg><use href="#i-warn"/></svg></span><div class="nb2"><strong>嚴重反應要即時求醫</strong>如出現氣促、面腫、嘴唇發紫或持續嘔吐，應立即求醫或致電 999。</div></div>
+    </template>
+
+    <div class="fc" style="margin-top:16px"><label class="fi"><span class="fl">備註</span><input class="fv" type="text" v-model="solidForm.note" placeholder="例如：餵咗兩茶匙、混米糊一齊食"></label></div>
+
+    <div class="ba"><a href="javascript:;" class="bp" :class="{disabled: !solidCanSave || saving}" @click="saveSolidFood">{{ editingType === 'solidfood' ? '更新記錄' : '儲存記錄' }}</a></div>
+    <div style="height:24px"></div>
   </div>
 
   <!-- ===== SUB: PROFILE ===== -->
