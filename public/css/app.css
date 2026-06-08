@@ -62,7 +62,7 @@ body::after { content: ''; position: fixed; bottom: 0; left: 0; right: 0; height
 .gd { display: flex; flex-wrap: wrap; background: var(--card); margin: 16px 0; border-radius: 0; }
 .gi { flex: 0 0 25%; display: flex; flex-direction: column; align-items: center; padding: 14px 4px; cursor: pointer; min-height: 68px; }
 .gi:active { opacity: 0.6; }
-.gi .gi-ico { margin-bottom: 6px; }
+.gi .gi-ico { margin-bottom: 6px; height: 30px; display: flex; align-items: center; justify-content: center; }
 .gi .gi-ico svg { width: 26px; height: 26px; }
 .gi span { font-size: 11px; color: var(--t2); }
 
@@ -477,11 +477,11 @@ label.fi { cursor: pointer; }
 /* ===== 輔食 (Solid food) feature ===== */
 /* food-tinted round icon chip (matches .ri.milk / .ri.poo family) */
 .ri.food { background: #FFF1E0; color: var(--orange); }
-/* uploaded illustration used as the 記錄輔食 home-grid tile icon.
-   Rendered at 32px (vs the 26px line glyphs) to match optical weight since the
-   artwork has built-in padding; negative top + 3px bottom margin keep its centre
-   (y≈27px) and the label baseline (y≈46px) aligned with the other tiles. */
-.gi .gi-ico.gi-img { width: 32px; height: 32px; object-fit: contain; display: block; margin-top: -3px; margin-bottom: 3px; }
+/* uploaded illustration used as the 記錄輔食 home-grid tile icon. It sits inside a
+   .gi-ico box (same as the line-icon tiles), so the label always lines up. Rendered
+   a bit larger than the box (34px) — the artwork has built-in padding — and centred,
+   so it overflows the 30px box symmetrically without shifting the label. */
+.gi .gi-ico .gi-img { width: 34px; height: 34px; object-fit: contain; display: block; flex-shrink: 0; }
 /* texture / category seg hint line */
 .seg-hint { font-size: 11px; color: var(--t3); margin: -8px 16px 0; }
 /* reaction emoji segmented — slightly taller for the glyphs */

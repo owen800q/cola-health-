@@ -1720,7 +1720,7 @@ const app = createApp({
       <div class="gi" @click="openSub('ad'); initTimes()"><div class="gi-ico" style="color:var(--green)"><svg><use href="#i-edit"/></svg></div><span>記錄換片</span></div>
       <div class="gi" @click="openSub('as')"><div class="gi-ico" style="color:var(--purple)"><svg><use href="#i-moon"/></svg></div><span>記錄睡眠</span></div>
       <div class="gi" @click="openSub('at'); initTimes(); loadTempHistory()"><div class="gi-ico" style="color:var(--red)"><svg><use href="#i-thermo"/></svg></div><span>量體溫</span></div>
-      <div class="gi" @click="openSolidScreen()"><img class="gi-ico gi-img" src="/icons/solid-food.svg" alt="記錄輔食"><span>記錄輔食</span></div>
+      <div class="gi" @click="openSolidScreen()"><div class="gi-ico"><img class="gi-img" src="/icons/solid-food.svg" alt="記錄輔食"></div><span>記錄輔食</span></div>
       <div class="gi" @click="openSub('g6')"><div class="gi-ico" style="color:var(--red)"><svg><use href="#i-warn"/></svg></div><span>蠶豆病</span></div>
       <div class="gi" @click="openSub('he')"><div class="gi-ico" style="color:var(--warn)"><svg><use href="#i-shield"/></svg></div><span>疫苗接種</span></div>
       <div class="gi" @click="openSub('st')"><div class="gi-ico" style="color:var(--teal)"><svg><use href="#i-barchart"/></svg></div><span>統計報告</span></div>
