@@ -475,6 +475,10 @@ label.fi { cursor: pointer; }
 .mb-fc .mb-tag { font-size: 11px; padding: 3px 8px; }
 
 /* ===== 輔食 (Solid food) feature ===== */
+/* sub-tabs (每日記錄 / 食物清單) sit flush under the nav header instead of
+   floating in a grey gap — the white bar reuses the seg control inside it */
+.sf-tabbar { background: var(--card); padding: 10px 16px 12px; border-bottom: 1px solid var(--t5); }
+.sf-tabbar .seg { margin: 0; }
 /* food-tinted round icon chip (matches .ri.milk / .ri.poo family) */
 .ri.food { background: #FFF1E0; color: var(--orange); }
 /* uploaded illustration used as the 記錄輔食 home-grid tile icon. It sits inside a

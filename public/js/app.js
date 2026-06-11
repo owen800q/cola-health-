@@ -1881,9 +1881,11 @@ const app = createApp({
   <!-- ===== SOLID FOOD (輔食) LIST ===== -->
   <div class="page" :class="{active: currentPage === 5}">
     <div class="nb"><span class="nb-back" @click="go(0)"><svg><use href="#i-back"/></svg></span><span class="nb-t">輔食記錄</span><span class="nb-a" @click="openSolidForm()"><svg><use href="#i-plus"/></svg></span></div>
-    <div class="seg">
-      <div class="seg-btn" :class="{active: sfTab === 'records'}" @click="sfTab = 'records'">每日記錄</div>
-      <div class="seg-btn" :class="{active: sfTab === 'foods'}" @click="sfTab = 'foods'">食物清單</div>
+    <div class="sf-tabbar">
+      <div class="seg">
+        <div class="seg-btn" :class="{active: sfTab === 'records'}" @click="sfTab = 'records'">每日記錄</div>
+        <div class="seg-btn" :class="{active: sfTab === 'foods'}" @click="sfTab = 'foods'">食物清單</div>
+      </div>
     </div>
 
     <!-- 記錄 tab -->
