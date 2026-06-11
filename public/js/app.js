@@ -212,7 +212,6 @@ const app = createApp({
     };
     const sfForm = reactive({ time: '', category: '蔬菜', name: '', texture: '泥蓉', first: false, amount: '食一半', reaction: '一般', abnormal: false, symptoms: [], note: '' });
     const sfReactionEmoji = (v) => (SF_REACTIONS.find(r => r.v === v) || {}).em || '';
-    const sfTodayLabel = computed(() => { const d = new Date(); return (d.getMonth() + 1) + '月' + d.getDate() + '日'; });
 
     // Sleep page
     const sleepHistory = ref([]);
@@ -863,7 +862,7 @@ const app = createApp({
 
     // ===== SOLID FOOD (輔食) ACTIONS =====
     async function loadSolidFoods() {
-      try { sfRecords.value = await API.getSolidFoods(store.babyId, localDayRange()) || []; }
+      try { sfRecords.value = await API.getSolidFoods(store.babyId, viewDayRange()) || []; }
       catch (e) { console.warn(e); }
     }
     async function loadSolidFoodList() {
@@ -887,10 +886,12 @@ const app = createApp({
       const i = sfForm.symptoms.indexOf(s);
       if (i >= 0) sfForm.symptoms.splice(i, 1); else sfForm.symptoms.push(s);
     }
+    let sfEditBaseTime = null; // original record time when editing, so saving keeps its date
     function openSolidForm(rec) {
       if (rec) {
         editingId.value = rec.id;
         editingType.value = 'solidfood';
+        sfEditBaseTime = rec.time;
         const d = new Date(rec.time);
         const syms = Array.isArray(rec.symptoms) ? rec.symptoms.slice()
           : (rec.symptoms ? (() => { try { return JSON.parse(rec.symptoms); } catch (e) { return []; } })() : []);
@@ -909,6 +910,7 @@ const app = createApp({
       } else {
         editingId.value = null;
         editingType.value = null;
+        sfEditBaseTime = null;
         Object.assign(sfForm, sfBlankForm());
         const d = new Date();
         sfForm.time = pad(d.getHours()) + ':' + pad(d.getMinutes());
@@ -922,10 +924,14 @@ const app = createApp({
       saving.value = true;
       showLoading('儲存中...');
       try {
-        const now = new Date();
-        if (sfForm.time) { const [h, m] = sfForm.time.split(':'); now.setHours(parseInt(h), parseInt(m), 0, 0); }
+        // Editing keeps the record's original date; a new record goes on the
+        // currently viewed day (= today unless the user navigated back).
+        const base = (editingId.value && editingType.value === 'solidfood' && sfEditBaseTime)
+          ? new Date(sfEditBaseTime)
+          : (currentPage.value === 5 ? new Date(viewDate.value) : new Date());
+        if (sfForm.time) { const [h, m] = sfForm.time.split(':'); base.setHours(parseInt(h), parseInt(m), 0, 0); }
         const data = {
-          time: now.toISOString(),
+          time: base.toISOString(),
           name: sfForm.name.trim(),
           category: sfForm.category,
           texture: sfForm.texture,
@@ -1239,6 +1245,7 @@ const app = createApp({
       if (p === 1) loadFeedHistory();
       else if (p === 2) loadDiaperHistory();
       else if (p === 3) loadSleepHistory();
+      else if (p === 5) loadSolidFoods();
     }
 
     // Feed summary computed
@@ -1625,7 +1632,7 @@ const app = createApp({
       diaperAmount, diaperNotes, showPooFields, saveDiaper, deleteDiaper,
       diaperSummary, diaperItemLabel, diaperItemIcon, diaperItemCls, diaperItemDetail,
       // Solid food (輔食)
-      sfRecords, sfFoods, sfTab, sfForm, sfSummary, sfReactionEmoji, sfTodayLabel,
+      sfRecords, sfFoods, sfTab, sfForm, sfSummary, sfReactionEmoji,
       SF_CATEGORIES, SF_TEXTURES, SF_AMOUNTS, SF_REACTIONS, SF_SYMPTOMS, SF_STATUS_META,
       openSolidScreen, openSolidForm, saveSolidFood, deleteSolidFood, sfToggleSymptom, sfCanSave,
       // Sleep
@@ -1875,18 +1882,18 @@ const app = createApp({
   <div class="page" :class="{active: currentPage === 5}">
     <div class="nb"><span class="nb-back" @click="go(0)"><svg><use href="#i-back"/></svg></span><span class="nb-t">輔食記錄</span><span class="nb-a" @click="openSolidForm()"><svg><use href="#i-plus"/></svg></span></div>
     <div class="seg">
-      <div class="seg-btn" :class="{active: sfTab === 'records'}" @click="sfTab = 'records'">今日記錄</div>
+      <div class="seg-btn" :class="{active: sfTab === 'records'}" @click="sfTab = 'records'">每日記錄</div>
       <div class="seg-btn" :class="{active: sfTab === 'foods'}" @click="sfTab = 'foods'">食物清單</div>
     </div>
 
-    <!-- 今日記錄 tab -->
+    <!-- 記錄 tab -->
     <template v-if="sfTab === 'records'">
+      <div class="dn"><span class="da" @click="prevDay"><svg><use href="#i-back"/></svg></span><span class="dt">{{ viewDateStr }}</span><span class="da" @click="nextDay"><svg><use href="#i-arrow"/></svg></span></div>
       <div class="sb">
-        <div class="sbi"><span class="sbv" style="color:var(--orange)">{{ sfSummary.count }}</span><span class="sbl">今日輔食次數</span></div>
+        <div class="sbi"><span class="sbv" style="color:var(--orange)">{{ sfSummary.count }}</span><span class="sbl">輔食次數</span></div>
         <div class="sbi"><span class="sbv" style="color:var(--green)">{{ sfSummary.newCount }}</span><span class="sbl">新食物種類</span></div>
         <div class="sbi"><span class="sbv" style="color:var(--t2)">{{ sfSummary.reject }}</span><span class="sbl">拒絕次數</span></div>
       </div>
-      <div class="st" style="display:flex;justify-content:space-between;align-items:center"><span>今日 · {{ sfTodayLabel }}</span><span style="color:var(--t3);font-weight:400">{{ sfRecords.length }} 項</span></div>
       <div class="cs" v-if="sfRecords.length">
         <div class="sw-row" v-for="r in sfRecords" :key="r.id">
           <div class="sw-c" @touchstart="swStart" @touchmove.prevent="swMove" @touchend="swEnd">
@@ -1902,7 +1909,7 @@ const app = createApp({
           <div class="sw-del" @click="deleteSolidFood(r.id)">刪除</div>
         </div>
       </div>
-      <div class="empty-state" v-else><svg><use href="#i-food"/></svg><p>今日暫無輔食記錄</p></div>
+      <div class="empty-state" v-else><svg><use href="#i-food"/></svg><p>暫無輔食記錄</p></div>
     </template>
 
     <!-- 食物清單 tab -->
