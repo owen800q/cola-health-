@@ -74,7 +74,9 @@
       return request('/growth?' + q);
     },
     createGrowth: (data) => request('/growth', { method: 'POST', body: data }),
+    updateGrowth: (id, data) => request('/growth/' + id, { method: 'PUT', body: data }),
     deleteGrowth: (id) => request('/growth/' + id, { method: 'DELETE' }),
+    getGrowthReference: (gender) => request('/growth/reference?gender=' + encodeURIComponent(gender || 'M')),
 
     // ---- Vaccines ----
     getVaccines: (babyId) => {

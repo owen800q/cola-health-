@@ -337,6 +337,292 @@ const app = createApp({
       finally { saving.value = false; }
     }
 
+    // ===== GROWTH CURVE =====
+    // 0-60 months percentile reference from WHO Child Growth Standards (HK DoH adopted)
+    const growthRecords = ref([]);
+    const growthRef = ref(null); // { gender, percentiles, maxMonth, weight, height }
+    const growthMetric = ref('weight'); // 'weight' | 'height'
+    const growthForm = reactive({ date: '', weight: '', height: '', note: '' });
+    const growthEditingId = ref(null);
+
+    function _todayIso() {
+      var d = new Date();
+      return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate());
+    }
+
+    function resetGrowthForm() {
+      growthForm.date = _todayIso();
+      growthForm.weight = '';
+      growthForm.height = '';
+      growthForm.note = '';
+      growthEditingId.value = null;
+    }
+
+    async function loadGrowth() {
+      resetGrowthForm();
+      try {
+        var list = await API.getGrowth(store.babyId);
+        growthRecords.value = Array.isArray(list) ? list : [];
+      } catch (e) { console.warn('Load growth:', e); growthRecords.value = []; }
+      try {
+        var g = (store.baby && store.baby.gender === 'F') ? 'F' : 'M';
+        growthRef.value = await API.getGrowthReference(g);
+      } catch (e) { console.warn('Load growth ref:', e); growthRef.value = null; }
+    }
+
+    // Classify a measurement against WHO percentile reference at given month age.
+    // Returns { band, label, tip, tone, range, pct } or null if out of range / missing data.
+    function classifyGrowthValue(value, monthAge, metric) {
+      if (value == null || monthAge == null || monthAge < 0) return null;
+      var ref = growthRef.value;
+      if (!ref) return null;
+      var series = ref[metric];
+      if (!series || !series.length) return null;
+      var maxM = ref.maxMonth || 60;
+      if (monthAge > maxM) return null;
+      var m0 = Math.min(maxM, Math.floor(monthAge));
+      var m1 = Math.min(maxM, m0 + 1);
+      var t = monthAge - m0;
+      var r0 = series[m0]; var r1 = series[m1];
+      var pct = [0,1,2,3,4].map(function (i) { return r0[i] + (r1[i] - r0[i]) * t; });
+      var unit = metric === 'weight' ? 'kg' : 'cm';
+      var noun = metric === 'weight' ? '體重' : '身高';
+      if (value < pct[0]) {
+        return { band: 'low', tone: 'red', label: noun + '偏低',
+          tip: '低於第3百分位（P3 = ' + pct[0].toFixed(1) + unit + '），建議諮詢醫生' };
+      }
+      if (value < pct[1]) {
+        return { band: 'mild-low', tone: 'warn', label: '略為偏低',
+          tip: '介於第3至15百分位，屬正常範圍下限，繼續觀察' };
+      }
+      if (value <= pct[3]) {
+        return { band: 'normal', tone: 'green', label: '發育正常',
+          tip: '介於第15至85百分位，位於健康標準範圍內' };
+      }
+      if (value <= pct[4]) {
+        return { band: 'mild-high', tone: 'warn', label: '略為偏高',
+          tip: '介於第85至97百分位，屬正常範圍上限，繼續觀察' };
+      }
+      return { band: 'high', tone: 'red', label: noun + '偏高',
+        tip: '高於第97百分位（P97 = ' + pct[4].toFixed(1) + unit + '），建議諮詢醫生' };
+    }
+
+    // Summary banner for the latest record matching the currently-selected metric
+    const latestGrowthSummary = computed(() => {
+      if (!growthRef.value || !store.baby?.birth_date || !growthRecords.value.length) return null;
+      var metric = growthMetric.value;
+      var recs = growthRecords.value.slice().sort(function (a, b) { return a.date < b.date ? 1 : -1; });
+      for (var i = 0; i < recs.length; i++) {
+        var r = recs[i];
+        var v = r[metric];
+        if (v == null) continue;
+        var m = ageInMonths(r.date, store.baby.birth_date);
+        var c = classifyGrowthValue(v, m, metric);
+        if (!c) continue;
+        return {
+          date: r.date,
+          value: v,
+          unit: metric === 'weight' ? 'kg' : 'cm',
+          metricLabel: metric === 'weight' ? '體重' : '身高',
+          monthStr: m == null ? '' : (m < 1 ? Math.round(m * 30) + '日' : m.toFixed(1) + '月'),
+          cls: c,
+        };
+      }
+      return null;
+    });
+
+    async function saveGrowthRecord() {
+      if (saving.value) return;
+      if (!growthForm.date) { showToast('請選擇日期'); return; }
+      var wt = parseFloat(growthForm.weight);
+      var ht = parseFloat(growthForm.height);
+      if (isNaN(wt) && isNaN(ht)) { showToast('請輸入體重或身高'); return; }
+      saving.value = true;
+      showLoading('儲存中...');
+      try {
+        var data = {
+          date: growthForm.date,
+          weight: isNaN(wt) ? null : wt,
+          height: isNaN(ht) ? null : ht,
+          head_circumference: null,
+          note: growthForm.note || null,
+        };
+        if (growthEditingId.value) {
+          await API.updateGrowth(growthEditingId.value, data);
+        } else {
+          await API.createGrowth(data);
+        }
+        hideLoading();
+        // Build summary message (shown on toast + persistent banner)
+        var monthAge = ageInMonths(data.date, store.baby && store.baby.birth_date);
+        var msg = growthEditingId.value ? '記錄已更新' : '記錄已儲存';
+        var parts = [];
+        if (data.weight != null) {
+          var cw = classifyGrowthValue(data.weight, monthAge, 'weight');
+          if (cw) parts.push('體重 ' + cw.label);
+        }
+        if (data.height != null) {
+          var ch = classifyGrowthValue(data.height, monthAge, 'height');
+          if (ch) parts.push('身高 ' + ch.label);
+        }
+        showToast(parts.length ? msg + ' · ' + parts.join('、') : msg);
+        resetGrowthForm();
+        var list = await API.getGrowth(store.babyId);
+        growthRecords.value = Array.isArray(list) ? list : [];
+      } catch (e) { hideLoading(); showToast('儲存失敗'); }
+      finally { saving.value = false; }
+    }
+
+    function editGrowthRecord(r) {
+      growthEditingId.value = r.id;
+      growthForm.date = (r.date || '').slice(0, 10);
+      growthForm.weight = r.weight == null ? '' : String(r.weight);
+      growthForm.height = r.height == null ? '' : String(r.height);
+      growthForm.note = r.note || '';
+    }
+
+    async function deleteGrowthRecord(id) {
+      var ok = await confirmDialog('確認刪除', '刪除後無法恢復');
+      if (!ok) return;
+      if (saving.value) return;
+      saving.value = true;
+      showLoading('刪除中...');
+      try {
+        await API.deleteGrowth(id);
+        hideLoading();
+        showToast('已刪除');
+        if (growthEditingId.value === id) resetGrowthForm();
+        var list = await API.getGrowth(store.babyId);
+        growthRecords.value = Array.isArray(list) ? list : [];
+      } catch (e) { hideLoading(); showToast('刪除失敗'); }
+      finally { saving.value = false; }
+    }
+
+    // Age in months (fractional) between birthday and a date
+    function ageInMonths(dateIso, birthIso) {
+      if (!dateIso || !birthIso) return null;
+      var d = new Date(dateIso);
+      var b = new Date(birthIso);
+      if (isNaN(d.getTime()) || isNaN(b.getTime())) return null;
+      var diffDays = (d.getTime() - b.getTime()) / 86400000;
+      return diffDays / 30.4375; // average days per month
+    }
+
+    // Chart geometry constants (viewBox 360 x 240, padding 36 left / 10 right / 8 top / 24 bottom)
+    const GC_VIEW = { W: 360, H: 240, L: 36, R: 10, T: 8, B: 24 };
+    const GC_COLORS = ['#EFCFC8', '#F7DDAE', '#86C79A', '#F7DDAE', '#EFCFC8']; // P3, P15, P50, P85, P97
+
+    const growthSeries = computed(() => {
+      if (!growthRef.value) return null;
+      return growthRef.value[growthMetric.value] || null;
+    });
+
+    // Y-axis range from reference (auto-fit to full P3..P97 extremes)
+    const growthYRange = computed(() => {
+      var s = growthSeries.value;
+      if (!s || !s.length) return { min: 0, max: 1 };
+      var minV = Infinity, maxV = -Infinity;
+      for (var i = 0; i < s.length; i++) {
+        if (s[i][0] < minV) minV = s[i][0];
+        if (s[i][4] > maxV) maxV = s[i][4];
+      }
+      // Pad range by ~5%
+      var pad = (maxV - minV) * 0.05;
+      return { min: Math.max(0, minV - pad), max: maxV + pad };
+    });
+
+    function _gcX(month) {
+      var maxM = (growthRef.value && growthRef.value.maxMonth) || 60;
+      var w = GC_VIEW.W - GC_VIEW.L - GC_VIEW.R;
+      return GC_VIEW.L + (Math.max(0, Math.min(maxM, month)) / maxM) * w;
+    }
+    function _gcY(val) {
+      var r = growthYRange.value;
+      var h = GC_VIEW.H - GC_VIEW.T - GC_VIEW.B;
+      var t = (val - r.min) / (r.max - r.min);
+      return GC_VIEW.T + (1 - Math.max(0, Math.min(1, t))) * h;
+    }
+
+    // Build SVG path for a given percentile index (0..4)
+    function growthChartPath(pIdx) {
+      var s = growthSeries.value;
+      if (!s || !s.length) return '';
+      var parts = [];
+      for (var m = 0; m < s.length; m++) {
+        var x = _gcX(m);
+        var y = _gcY(s[m][pIdx]);
+        parts.push((m === 0 ? 'M' : 'L') + x.toFixed(1) + ',' + y.toFixed(1));
+      }
+      return parts.join(' ');
+    }
+
+    // Build a filled band path between two percentiles (low idx .. high idx)
+    function growthBandPath(lowIdx, highIdx) {
+      var s = growthSeries.value;
+      if (!s || !s.length) return '';
+      var top = [], bot = [];
+      for (var m = 0; m < s.length; m++) {
+        top.push(_gcX(m).toFixed(1) + ',' + _gcY(s[m][highIdx]).toFixed(1));
+        bot.push(_gcX(m).toFixed(1) + ',' + _gcY(s[m][lowIdx]).toFixed(1));
+      }
+      bot.reverse();
+      return 'M' + top.join(' L') + ' L' + bot.join(' L') + ' Z';
+    }
+
+    // Baby's recorded points in chart coordinates
+    const growthChartPoints = computed(() => {
+      if (!growthRef.value || !store.baby?.birth_date) return [];
+      var metric = growthMetric.value;
+      var maxM = growthRef.value.maxMonth;
+      var pts = [];
+      var recs = growthRecords.value.slice().sort(function (a, b) { return (a.date < b.date ? -1 : 1); });
+      for (var i = 0; i < recs.length; i++) {
+        var r = recs[i];
+        var v = r[metric];
+        if (v == null) continue;
+        var m = ageInMonths(r.date, store.baby.birth_date);
+        if (m == null || m < 0 || m > maxM) continue;
+        pts.push({
+          x: _gcX(m).toFixed(1),
+          y: _gcY(v).toFixed(1),
+          v: v,
+          date: r.date,
+          month: m.toFixed(1),
+        });
+      }
+      return pts;
+    });
+
+    // Polyline connecting baby points
+    const growthChartLine = computed(() => {
+      var pts = growthChartPoints.value;
+      if (pts.length < 2) return '';
+      return pts.map(function (p) { return p.x + ',' + p.y; }).join(' ');
+    });
+
+    // X-axis tick positions (every 12 months)
+    const growthXTicks = computed(() => {
+      var maxM = (growthRef.value && growthRef.value.maxMonth) || 60;
+      var ticks = [];
+      for (var m = 0; m <= maxM; m += 12) {
+        ticks.push({ m: m, x: _gcX(m).toFixed(1), label: m === 0 ? '出生' : (m / 12) + '歲' });
+      }
+      return ticks;
+    });
+
+    // Y-axis ticks (5 evenly spaced)
+    const growthYTicks = computed(() => {
+      var r = growthYRange.value;
+      var ticks = [];
+      for (var i = 0; i <= 4; i++) {
+        var v = r.min + (r.max - r.min) * (i / 4);
+        ticks.push({ v: v, y: _gcY(v).toFixed(1), label: v.toFixed(growthMetric.value === 'weight' ? 1 : 0) });
+      }
+      return ticks;
+    });
+
+    const growthMetricLabel = computed(() => growthMetric.value === 'weight' ? '體重 (kg)' : '身高 (cm)');
+
     // ===== BOTTLE ASSEMBLY =====
     const bottleSlots = ref([]);
     const bottlePhotoZoom = ref(null);
@@ -1648,6 +1934,11 @@ const app = createApp({
       // Vaccines
       vaccines, vaccineGroups, vaccineDesc, vaccineName, vaccineStatusCls, vaccineStatusText, vaccineIcon, vaccineIconColor,
       editVaccine, vaccineEditDate, vaccineEditLocation, openVaccineEdit, saveVaccineEdit,
+      // Growth curve
+      growthRecords, growthRef, growthMetric, growthForm, growthEditingId,
+      growthSeries, growthYRange, growthChartPoints, growthChartLine, growthXTicks, growthYTicks,
+      growthMetricLabel, latestGrowthSummary, loadGrowth, saveGrowthRecord, editGrowthRecord,
+      deleteGrowthRecord, resetGrowthForm, growthChartPath, growthBandPath, fmtDateCN,
       // Bottle Assembly
       bottleSlots, bottlePhotoZoom, loadBottleSlots, addBottleSlot, removeBottleSlot,
       takeBottlePhoto, pickBottlePhoto, removeBottlePhoto, fmtTimeAgo,
@@ -1730,6 +2021,7 @@ const app = createApp({
       <div class="gi" @click="openSolidScreen()"><div class="gi-ico"><img class="gi-img" src="/icons/solid-food.svg" alt="記錄輔食"></div><span>記錄輔食</span></div>
       <div class="gi" @click="openSub('g6')"><div class="gi-ico" style="color:var(--red)"><svg><use href="#i-warn"/></svg></div><span>蠶豆病</span></div>
       <div class="gi" @click="openSub('he')"><div class="gi-ico" style="color:var(--warn)"><svg><use href="#i-shield"/></svg></div><span>疫苗接種</span></div>
+      <div class="gi" @click="openSub('gc'); loadGrowth()"><div class="gi-ico" style="color:var(--green)"><svg><use href="#i-chart"/></svg></div><span>成長曲線</span></div>
       <div class="gi" @click="openSub('st')"><div class="gi-ico" style="color:var(--teal)"><svg><use href="#i-barchart"/></svg></div><span>統計報告</span></div>
       <div class="gi" @click="openSub('ex')"><div class="gi-ico" style="color:rgba(0,0,0,0.4)"><svg><use href="#i-pdf"/></svg></div><span>匯出PDF</span></div>
       <div class="gi" @click="openSub('rm')"><div class="gi-ico" style="color:var(--orange)"><svg><use href="#i-bell"/></svg></div><span>提醒設定</span></div>
@@ -1857,6 +2149,7 @@ const app = createApp({
     </div>
     <div class="st">健康</div>
     <div class="cs">
+      <div class="cl" @click="openSub('gc'); loadGrowth()"><span class="ci" style="color:var(--green)"><svg><use href="#i-chart"/></svg></span><div class="cb"><div class="ct">成長曲線</div><div class="cd">0–5歲體重/身高百分位 (WHO · 衞生署)</div></div><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
       <div class="cl" @click="openSub('he')"><span class="ci" style="color:var(--green)"><svg><use href="#i-shield"/></svg></span><div class="cb"><div class="ct">疫苗接種計劃</div><div class="cd">香港兒童免疫接種計劃</div></div><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
       <div class="cl" @click="openSub('hs')"><span class="ci" style="color:var(--blue)"><svg><use href="#i-health"/></svg></span><div class="cb"><div class="ct">幼兒健康及發展綜合計劃</div></div><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
       <div class="cl" @click="openSub('g6')"><span class="ci" style="color:var(--red)"><svg><use href="#i-warn"/></svg></span><div class="cb"><div class="ct">蠶豆病須知</div></div><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
@@ -2140,6 +2433,105 @@ const app = createApp({
       </div>
       <div class="ba"><a href="javascript:;" class="bp" :class="{disabled: saving}" @click="saveVaccineEdit">標記為已完成</a></div>
     </div>
+  </div>
+
+  <!-- ===== SUB: GROWTH CURVE ===== -->
+  <div class="sub" :class="{active: activeSub === 'gc'}" @touchstart="subSwipeStart" @touchmove="subSwipeMove" @touchend="subSwipeEnd">
+    <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">成長曲線</span><div class="nb-ph"></div></div>
+    <div class="nt nc"><span class="nn" style="color:var(--blue)"><svg><use href="#i-info"/></svg></span><div class="nb2">根據 WHO Child Growth Standards (0–5歲)，香港衞生署家庭健康服務採用。<br>來源：<span style="color:var(--blue)">fhs.gov.hk</span></div></div>
+
+    <!-- metric tab switch -->
+    <div class="gc-tabs">
+      <span class="gc-tab" :class="{active: growthMetric==='weight'}" @click="growthMetric='weight'">體重</span>
+      <span class="gc-tab" :class="{active: growthMetric==='height'}" @click="growthMetric='height'">身高</span>
+    </div>
+
+    <!-- Summary banner: current status based on latest record -->
+    <div v-if="latestGrowthSummary" class="gc-sum" :class="'gc-sum-' + latestGrowthSummary.cls.tone">
+      <div class="gc-sum-hd">
+        <svg class="gc-sum-ic"><use :href="latestGrowthSummary.cls.tone === 'green' ? '#i-check' : '#i-alert'"/></svg>
+        <span class="gc-sum-lb">{{ latestGrowthSummary.cls.label }}</span>
+      </div>
+      <div class="gc-sum-mt">{{ fmtDateCN(latestGrowthSummary.date) }} · {{ latestGrowthSummary.monthStr }} · {{ latestGrowthSummary.metricLabel }} {{ latestGrowthSummary.value }}{{ latestGrowthSummary.unit }}</div>
+      <div class="gc-sum-tp">{{ latestGrowthSummary.cls.tip }}</div>
+    </div>
+
+    <!-- Chart -->
+    <div class="gc-wrap" v-if="growthRef">
+      <div class="gc-title">{{ growthMetricLabel }} · {{ growthRef.gender === 'F' ? '女' : '男' }}</div>
+      <svg class="gc-chart" viewBox="0 0 360 240" preserveAspectRatio="none">
+        <!-- Bands -->
+        <path :d="growthBandPath(0, 4)" fill="#EFCFC8" opacity="0.35"></path>
+        <path :d="growthBandPath(1, 3)" fill="#86C79A" opacity="0.30"></path>
+        <!-- Percentile lines -->
+        <path :d="growthChartPath(0)" fill="none" stroke="#D35454" stroke-width="0.8" stroke-dasharray="3 2" opacity="0.6"></path>
+        <path :d="growthChartPath(1)" fill="none" stroke="#D39A3C" stroke-width="0.8" stroke-dasharray="3 2" opacity="0.6"></path>
+        <path :d="growthChartPath(2)" fill="none" stroke="#2E8B57" stroke-width="1.4"></path>
+        <path :d="growthChartPath(3)" fill="none" stroke="#D39A3C" stroke-width="0.8" stroke-dasharray="3 2" opacity="0.6"></path>
+        <path :d="growthChartPath(4)" fill="none" stroke="#D35454" stroke-width="0.8" stroke-dasharray="3 2" opacity="0.6"></path>
+        <!-- X ticks -->
+        <g class="gc-axis">
+          <line x1="36" y1="216" x2="350" y2="216" stroke="rgba(0,0,0,0.25)" stroke-width="0.6"></line>
+          <g v-for="t in growthXTicks" :key="'x'+t.m">
+            <line :x1="t.x" y1="214" :x2="t.x" y2="218" stroke="rgba(0,0,0,0.3)" stroke-width="0.6"></line>
+            <text :x="t.x" y="230" text-anchor="middle" font-size="9" fill="rgba(0,0,0,0.55)">{{ t.label }}</text>
+          </g>
+          <line x1="36" y1="8" x2="36" y2="216" stroke="rgba(0,0,0,0.25)" stroke-width="0.6"></line>
+          <g v-for="(t, i) in growthYTicks" :key="'y'+i">
+            <line x1="34" :y1="t.y" x2="36" :y2="t.y" stroke="rgba(0,0,0,0.3)" stroke-width="0.6"></line>
+            <text x="32" :y="+t.y + 3" text-anchor="end" font-size="9" fill="rgba(0,0,0,0.55)">{{ t.label }}</text>
+          </g>
+        </g>
+        <!-- Baby line + points -->
+        <polyline v-if="growthChartLine" :points="growthChartLine" fill="none" stroke="#10AEFF" stroke-width="1.4" stroke-linejoin="round"></polyline>
+        <g>
+          <circle v-for="(p, i) in growthChartPoints" :key="'p'+i" :cx="p.x" :cy="p.y" r="2.6" fill="#10AEFF" stroke="#fff" stroke-width="1"></circle>
+        </g>
+      </svg>
+      <div class="gc-legend">
+        <span class="gc-lg"><i style="background:#EFCFC8"></i>P3 / P97</span>
+        <span class="gc-lg"><i style="background:#86C79A"></i>P15 / P85</span>
+        <span class="gc-lg"><i style="background:#2E8B57"></i>P50 (中位)</span>
+        <span class="gc-lg"><i style="background:#10AEFF"></i>{{ babyName }}</span>
+      </div>
+    </div>
+    <div v-else style="text-align:center;padding:32px 16px;color:var(--t3)">載入中...</div>
+
+    <!-- Add / Edit form -->
+    <div class="st">{{ growthEditingId ? '編輯紀錄' : '新增紀錄' }}</div>
+    <div class="fc">
+      <label class="fi"><span class="fl">日期</span><input class="fv" type="date" v-model="growthForm.date"></label>
+      <label class="fi"><span class="fl">體重 (kg)</span><input class="fv" type="number" step="0.01" inputmode="decimal" placeholder="例如 5.20" v-model="growthForm.weight"></label>
+      <label class="fi"><span class="fl">身高 (cm)</span><input class="fv" type="number" step="0.1" inputmode="decimal" placeholder="例如 58.0" v-model="growthForm.height"></label>
+      <label class="fi"><span class="fl">備註</span><input class="fv" type="text" placeholder="選填" v-model="growthForm.note"></label>
+    </div>
+    <div class="ba">
+      <a href="javascript:;" class="bp" :class="{disabled: saving}" @click="saveGrowthRecord">{{ growthEditingId ? '更新紀錄' : '儲存紀錄' }}</a>
+      <a v-if="growthEditingId" href="javascript:;" class="bp" style="background:rgba(0,0,0,0.06);color:var(--t2);margin-top:8px" @click="resetGrowthForm">取消編輯</a>
+    </div>
+
+    <!-- History list -->
+    <div class="st">紀錄歷史</div>
+    <div class="cs" v-if="growthRecords.length">
+      <div class="cl" v-for="r in growthRecords" :key="r.id">
+        <span class="ci" style="color:var(--teal)"><svg><use href="#i-chart"/></svg></span>
+        <div class="cb">
+          <div class="ct">{{ fmtDateCN(r.date) }}</div>
+          <div class="cd">
+            <span v-if="r.weight != null">{{ r.weight }} kg</span>
+            <span v-if="r.weight != null && r.height != null"> · </span>
+            <span v-if="r.height != null">{{ r.height }} cm</span>
+            <span v-if="r.note"> · {{ r.note }}</span>
+          </div>
+        </div>
+        <div class="cr row" style="gap:12px">
+          <span @click.stop="editGrowthRecord(r)" style="cursor:pointer;color:var(--blue)"><svg style="width:18px;height:18px"><use href="#i-edit"/></svg></span>
+          <span @click.stop="deleteGrowthRecord(r.id)" style="cursor:pointer;color:var(--red)"><svg style="width:18px;height:18px"><use href="#i-trash"/></svg></span>
+        </div>
+      </div>
+    </div>
+    <div v-else style="text-align:center;padding:24px 16px;color:var(--t3);font-size:14px">尚未有紀錄</div>
+    <div style="height:32px"></div>
   </div>
 
   <!-- ===== SUB: HEALTH SCHEDULE ===== -->
