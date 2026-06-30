@@ -829,18 +829,27 @@ const app = createApp({
     function _addMsPhotoFile(file) {
       if (msPhotos.value.length >= 9) { showToast('最多 9 張相片'); return; }
       const reader = new FileReader();
+      reader.onerror = function () { showToast('讀取相片失敗'); };
       reader.onload = function (ev) {
+        const dataUrl = ev.target.result;
         const img = new Image();
         img.onload = function () {
-          const canvas = document.createElement('canvas');
-          const maxW = 1000;
-          const scale = Math.min(1, maxW / img.width);
-          canvas.width = img.width * scale;
-          canvas.height = img.height * scale;
-          canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-          msPhotos.value.push(canvas.toDataURL('image/jpeg', 0.7));
+          try {
+            const canvas = document.createElement('canvas');
+            const maxW = 1000;
+            const w = img.width || maxW, h = img.height || maxW;
+            const scale = Math.min(1, maxW / w);
+            canvas.width = w * scale;
+            canvas.height = h * scale;
+            canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+            msPhotos.value.push(canvas.toDataURL('image/jpeg', 0.7));
+          } catch (e) {
+            msPhotos.value.push(dataUrl); // fall back to the original image
+          }
         };
-        img.src = ev.target.result;
+        // If the browser can't decode it (e.g. some HEIC), keep the original
+        img.onerror = function () { msPhotos.value.push(dataUrl); };
+        img.src = dataUrl;
       };
       reader.readAsDataURL(file);
     }
@@ -885,13 +894,28 @@ const app = createApp({
       inp.type = 'file';
       inp.accept = 'image/*,video/*';
       inp.multiple = true;
+      // iOS Safari only fires `change` reliably when the input is in the DOM
+      inp.style.cssText = 'position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0';
+      document.body.appendChild(inp);
+      let cleaned = false;
+      function cleanup() {
+        if (cleaned) return;
+        cleaned = true;
+        if (inp.parentNode) inp.parentNode.removeChild(inp);
+      }
       inp.onchange = function () {
         const files = Array.prototype.slice.call(inp.files || []);
         files.forEach(function (f) {
           if (f.type && f.type.indexOf('video') === 0) _addMsVideoFile(f);
           else _addMsPhotoFile(f);
         });
+        cleanup();
       };
+      // Clean up if the picker is dismissed without choosing anything
+      window.addEventListener('focus', function onFocus() {
+        window.removeEventListener('focus', onFocus);
+        setTimeout(cleanup, 1500);
+      }, { once: true });
       inp.click();
     }
 
