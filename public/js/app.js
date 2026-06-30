@@ -1187,11 +1187,17 @@ const app = createApp({
 
     // Navigation
     function go(i) { currentPage.value = i; }
+    let _subScrollY = 0;
     function openSub(name) {
       // Reset editing state if NOT triggered by editFeed/editDiaper/editSleep
       if (!editingId.value) {
         editingType.value = null;
       }
+      // iOS Safari mis-anchors position:fixed overlays when the page is
+      // scrolled (the sub renders mid-page over the content). Reset scroll to
+      // the top so the fixed overlay lines up with the viewport.
+      _subScrollY = window.scrollY || window.pageYOffset || 0;
+      try { window.scrollTo(0, 0); } catch (e) {}
       activeSub.value = name;
       if (name === 'he') loadVaccines();
     }
@@ -1199,6 +1205,9 @@ const app = createApp({
       activeSub.value = null;
       editingId.value = null;
       editingType.value = null;
+      // Restore the underlying page scroll position after the overlay closes
+      const y = _subScrollY;
+      nextTick(function () { try { window.scrollTo(0, y); } catch (e) {} });
     }
 
     // ===== DATA LOADING =====
