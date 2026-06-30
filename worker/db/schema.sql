@@ -73,6 +73,22 @@ CREATE TABLE IF NOT EXISTS temperatures (
   created_at TEXT DEFAULT (datetime('now'))
 );
 
+-- Solid food (輔食) records — complementary feeding + allergy observation
+CREATE TABLE IF NOT EXISTS solid_foods (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  time TEXT NOT NULL,
+  name TEXT NOT NULL,
+  category TEXT,
+  texture TEXT,
+  first_try INTEGER DEFAULT 0,
+  amount TEXT,
+  reaction TEXT,
+  abnormal INTEGER DEFAULT 0,
+  symptoms TEXT,
+  note TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
 -- Growth records
 CREATE TABLE IF NOT EXISTS growth (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -134,6 +150,7 @@ CREATE INDEX IF NOT EXISTS idx_sleeps_start ON sleeps(start_time DESC);
 CREATE INDEX IF NOT EXISTS idx_vaccines_status ON vaccines(status);
 CREATE INDEX IF NOT EXISTS idx_growth_date ON growth(date DESC);
 CREATE INDEX IF NOT EXISTS idx_temperatures_time ON temperatures(time DESC);
+CREATE INDEX IF NOT EXISTS idx_solid_foods_time ON solid_foods(time DESC);
 
 -- Seed default baby profile
 INSERT OR IGNORE INTO baby (id, name, gender, birth_date, birth_weight, birth_height)
