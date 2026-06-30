@@ -49,6 +49,16 @@
     updateDiaper: (id, data) => request('/diapers/' + id, { method: 'PUT', body: data }),
     deleteDiaper: (id) => request('/diapers/' + id, { method: 'DELETE' }),
 
+    // ---- Solid foods (輔食) ----
+    getSolidFoods: (babyId, params) => {
+      const q = new URLSearchParams({ baby_id: babyId, ...params }).toString();
+      return request('/solidfoods?' + q);
+    },
+    getSolidFoodList: () => request('/solidfoods/foods'),
+    createSolidFood: (data) => request('/solidfoods', { method: 'POST', body: data }),
+    updateSolidFood: (id, data) => request('/solidfoods/' + id, { method: 'PUT', body: data }),
+    deleteSolidFood: (id) => request('/solidfoods/' + id, { method: 'DELETE' }),
+
     // ---- Sleeps ----
     getSleeps: (babyId, params) => {
       const q = new URLSearchParams({ baby_id: babyId, ...params }).toString();
