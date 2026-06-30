@@ -2528,7 +2528,7 @@ const app = createApp({
         <span class="ms-chip-emo">{{ p.emoji }}</span><span>{{ p.label }}</span>
       </div>
     </div>
-    <div class="fc"><label class="fi"><span class="fl">名稱</span><input class="fv" type="text" placeholder="自訂里程碑名稱" v-model="msName"></label></div>
+    <div class="fc" style="margin-top:16px"><label class="fi"><span class="fl">名稱</span><input class="fv" type="text" placeholder="自訂里程碑名稱" v-model="msName"></label></div>
 
     <!-- date + auto age -->
     <div class="st">日期</div>
