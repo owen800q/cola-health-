@@ -362,3 +362,23 @@ INSERT OR IGNORE INTO babycare_rooms (name, name_en, district, region, address, 
 INSERT OR IGNORE INTO babycare_rooms (name, name_en, district, region, address, type, facilities) VALUES ('港鐵迪士尼站', 'MTR Disneyland Resort Station', '離島', '新界', '大嶼山迪士尼', '交通', '["換片台","洗手盆"]');
 INSERT OR IGNORE INTO babycare_rooms (name, name_en, district, region, address, type, facilities) VALUES ('香港國際機場', 'Hong Kong International Airport', '離島', '新界', '赤鱲角翔天路1號', '交通', '["換片台","哺乳椅","洗手盆","熱水供應","微波爐"]');
 INSERT OR IGNORE INTO babycare_rooms (name, name_en, district, region, address, type, facilities) VALUES ('北大嶼山醫院', 'North Lantau Hospital', '離島', '新界', '東涌松仁路8號', '醫院', '["換片台","哺乳椅","洗手盆","熱水供應"]');
+
+-- ===== Milestones (里程碑) =====
+CREATE TABLE IF NOT EXISTS milestones (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  date TEXT NOT NULL,
+  note TEXT,
+  place TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS milestone_photos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  milestone_id INTEGER NOT NULL REFERENCES milestones(id) ON DELETE CASCADE,
+  photo_data TEXT NOT NULL,
+  sort_order INTEGER DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_milestone_photos_mid ON milestone_photos(milestone_id);

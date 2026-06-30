@@ -699,6 +699,178 @@ const app = createApp({
       return Math.floor(diff / 86400) + '日前';
     }
 
+    // ===== MILESTONES (里程碑) =====
+    const milestones = ref([]);
+    const msEditingId = ref(null);
+    const msName = ref('');
+    const msDate = ref('');
+    const msNote = ref('');
+    const msPlace = ref('');
+    const msPhotos = ref([]); // array of data URLs (cover = index 0)
+
+    const msPresets = [
+      { emoji: '🪑', label: '第一次坐' },
+      { emoji: '🔄', label: '第一次翻身' },
+      { emoji: '😄', label: '第一次笑' },
+      { emoji: '🦷', label: '第一次出牙' },
+      { emoji: '🥣', label: '第一次食輔食' },
+      { emoji: '🗣️', label: '叫爸爸/媽媽' },
+      { emoji: '🧍', label: '第一次企' },
+      { emoji: '👣', label: '第一次行' },
+    ];
+
+    // Age at a given date relative to baby's birth date (e.g. "5個月又3日")
+    function msAgeAt(dateStr) {
+      const dob = baby.value && baby.value.birth_date;
+      if (!dob || !dateStr) return '';
+      const b = new Date(dob), d = new Date(dateStr);
+      let months = (d.getFullYear() - b.getFullYear()) * 12 + (d.getMonth() - b.getMonth());
+      let anchor = new Date(b); anchor.setMonth(b.getMonth() + months);
+      if (anchor > d) { months--; anchor = new Date(b); anchor.setMonth(b.getMonth() + months); }
+      const days = Math.round((d - anchor) / 86400000);
+      if (months <= 0) return Math.max(days, 0) + '日';
+      if (months >= 12) { const y = Math.floor(months / 12), m = months % 12; return y + '歲' + (m ? m + '個月' : ''); }
+      if (days === 0) return months + '個月';
+      return months + '個月又' + days + '日';
+    }
+
+    function fmtMsDate(iso) {
+      if (!iso) return '';
+      const d = new Date(iso);
+      return (d.getMonth() + 1) + '月' + d.getDate() + '日';
+    }
+
+    // Build the prototype-style media block (1 big + 2 stacked, "+N" overlay)
+    function msMedia(m) {
+      const ph = (m && m.photos) || [];
+      return {
+        count: ph.length,
+        main: ph[0] ? ph[0].dataUrl : null,
+        second: ph[1] ? ph[1].dataUrl : null,
+        third: ph[2] ? ph[2].dataUrl : null,
+        more: ph.length > 3 ? ph.length - 3 : 0,
+      };
+    }
+
+    const msComputedAge = computed(() => msAgeAt(msDate.value));
+
+    async function loadMilestones() {
+      if (!store.babyId) return;
+      try {
+        const list = await API.getMilestones() || [];
+        milestones.value = list.map(function (m) {
+          return Object.assign({}, m, { _age: msAgeAt(m.date), _dateStr: fmtMsDate(m.date), _media: msMedia(m) });
+        });
+      } catch (e) { console.warn('Load milestones:', e); }
+    }
+
+    function resetMilestoneForm() {
+      msEditingId.value = null;
+      msName.value = '';
+      msDate.value = todayStr();
+      msNote.value = '';
+      msPlace.value = '';
+      msPhotos.value = [];
+    }
+
+    function openAddMilestone() {
+      resetMilestoneForm();
+      openSub('ms');
+    }
+
+    function pickMsPreset(p) {
+      msName.value = p.label;
+    }
+
+    function _addMsPhotoFile(file) {
+      if (msPhotos.value.length >= 9) { showToast('最多 9 張相片'); return; }
+      const reader = new FileReader();
+      reader.onload = function (ev) {
+        const img = new Image();
+        img.onload = function () {
+          const canvas = document.createElement('canvas');
+          const maxW = 1000;
+          const scale = Math.min(1, maxW / img.width);
+          canvas.width = img.width * scale;
+          canvas.height = img.height * scale;
+          canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+          msPhotos.value.push(canvas.toDataURL('image/jpeg', 0.7));
+        };
+        img.src = ev.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function pickMsPhoto() {
+      const inp = document.createElement('input');
+      inp.type = 'file';
+      inp.accept = 'image/*';
+      inp.multiple = true;
+      inp.onchange = function () {
+        const files = Array.prototype.slice.call(inp.files || []);
+        files.forEach(_addMsPhotoFile);
+      };
+      inp.click();
+    }
+
+    function removeMsPhoto(i) {
+      msPhotos.value.splice(i, 1);
+    }
+
+    function editMilestone(m) {
+      msEditingId.value = m.id;
+      msName.value = m.name;
+      msDate.value = m.date;
+      msNote.value = m.note || '';
+      msPlace.value = m.place || '';
+      msPhotos.value = (m.photos || []).map(function (p) { return p.dataUrl; });
+      openSub('ms');
+    }
+
+    async function saveMilestone() {
+      if (saving.value) return;
+      const name = msName.value.trim();
+      if (!name) { showToast('請輸入或選擇里程碑類型'); return; }
+      if (!msDate.value) { showToast('請選擇日期'); return; }
+      saving.value = true;
+      showLoading('儲存中...');
+      try {
+        if (msEditingId.value) {
+          await API.updateMilestone(msEditingId.value, {
+            name: name, date: msDate.value,
+            note: msNote.value.trim() || null,
+            place: msPlace.value.trim() || null,
+          });
+        } else {
+          await API.createMilestone({
+            name: name, date: msDate.value,
+            note: msNote.value.trim() || null,
+            place: msPlace.value.trim() || null,
+            photos: msPhotos.value,
+          });
+        }
+        hideLoading();
+        showToast(msEditingId.value ? '已更新里程碑' : '已記錄里程碑');
+        closeSub();
+        resetMilestoneForm();
+        loadMilestones();
+      } catch (e) { hideLoading(); showToast('儲存失敗'); }
+      finally { saving.value = false; }
+    }
+
+    async function deleteMilestone(id) {
+      const ok = await confirmDialog('刪除里程碑', '確定刪除此里程碑？此操作無法復原。');
+      if (!ok) return;
+      showLoading('刪除中...');
+      try {
+        await API.deleteMilestone(id);
+        hideLoading();
+        showToast('已刪除');
+        closeSub();
+        loadMilestones();
+      } catch (e) { hideLoading(); showToast('刪除失敗'); }
+    }
+
     // ===== AI CHAT =====
     const chatMessages = ref([]);
     const chatInput = ref('');
@@ -1751,6 +1923,7 @@ const app = createApp({
       if (p === 1) loadFeedHistory();
       if (p === 2) loadDiaperHistory();
       if (p === 3) loadSleepHistory();
+      if (p === 5) loadMilestones();
     });
 
     return {
@@ -1790,6 +1963,10 @@ const app = createApp({
       // Bottle Assembly
       bottleSlots, bottlePhotoZoom, loadBottleSlots, addBottleSlot, removeBottleSlot,
       takeBottlePhoto, pickBottlePhoto, removeBottlePhoto, fmtTimeAgo,
+      // Milestones
+      milestones, msEditingId, msName, msDate, msNote, msPlace, msPhotos, msPresets,
+      msComputedAge, loadMilestones, openAddMilestone, pickMsPreset, pickMsPhoto,
+      removeMsPhoto, editMilestone, saveMilestone, deleteMilestone,
       // AI Chat
       chatMessages, chatInput, chatImage, chatLoading, chatError,
       sendChat, onChatImagePick, clearChatImage, clearChat,
@@ -1875,6 +2052,7 @@ const app = createApp({
       <div class="gi" @click="openSub('bt'); loadBottleSlots()"><div class="gi-ico" style="color:var(--teal)"><svg><use href="#i-bottle"/></svg></div><span>奶瓶組裝</span></div>
       <div class="gi" @click="openSub('ai')"><div class="gi-ico" style="color:var(--purple)"><svg><use href="#i-chat"/></svg></div><span>問 AI</span></div>
       <div class="gi" @click="openMbRooms()"><div class="gi-ico" style="color:var(--green)"><svg><use href="#i-mappin"/></svg></div><span>母嬰室</span></div>
+      <div class="gi" @click="go(5)"><div class="gi-ico" style="color:var(--green)"><svg><use href="#i-flag"/></svg></div><span>里程碑</span></div>
     </div>
     <div class="st">今日記錄</div>
     <div class="cs" v-if="recentItems.length">
@@ -2016,6 +2194,108 @@ const app = createApp({
       <span class="nn" style="color:var(--blue)"><svg><use href="#i-info"/></svg></span>
       <div class="nb2">資料儲存於 Cloudflare D1 數據庫，安全可靠。支援 PWA 離線使用。</div>
     </div>
+  </div>
+
+  <!-- ===== MILESTONES (里程碑) ===== -->
+  <div class="page" :class="{active: currentPage === 5}">
+    <div class="nb"><div class="nb-ph"></div><span class="nb-t">里程碑</span><span class="nb-a" @click="openAddMilestone()"><svg><use href="#i-plus"/></svg></span></div>
+
+    <!-- baby header card -->
+    <div class="ms-head">
+      <div class="ms-av" @click="pickAvatar"><img v-if="avatarUrl" :src="avatarUrl"><svg v-else><use href="#i-baby"/></svg></div>
+      <div class="ms-hi">
+        <h3>{{ babyName }}</h3>
+        <p>{{ babyBirthday }}出生</p>
+      </div>
+      <div class="ms-now"><span class="ms-now-l">現在</span><span class="ms-now-v">{{ babyAge }}</span></div>
+    </div>
+
+    <div class="ms-prog">
+      <span>已記錄</span><strong>{{ milestones.length }} 個里程碑</strong>
+    </div>
+
+    <!-- timeline -->
+    <div class="ms-tl" v-if="milestones.length">
+      <div class="ms-line"></div>
+      <div class="ms-item" v-for="m in milestones" :key="m.id">
+        <div class="ms-node"><div class="ms-node-dot"></div></div>
+        <div class="ms-card">
+          <!-- media -->
+          <div class="ms-media" v-if="m._media.count" @click="m._media.main && (bottlePhotoZoom = m._media.main)">
+            <div class="ms-media-main" :style="{ backgroundImage: 'url(' + m._media.main + ')' }"></div>
+            <div class="ms-media-side" v-if="m._media.count > 1">
+              <div class="ms-media-cell" :style="{ backgroundImage: 'url(' + (m._media.second || m._media.main) + ')' }"></div>
+              <div class="ms-media-cell" v-if="m._media.third" :style="{ backgroundImage: 'url(' + m._media.third + ')' }">
+                <div class="ms-media-more" v-if="m._media.more">+{{ m._media.more }}</div>
+              </div>
+            </div>
+          </div>
+          <!-- text -->
+          <div class="ms-body" @click="editMilestone(m)">
+            <div class="ms-body-h"><span class="ms-name">{{ m.name }}</span><span class="ms-date">{{ m._dateStr }}</span></div>
+            <span class="ms-age">{{ m._age }}</span>
+            <div class="ms-note" v-if="m.note">{{ m.note }}</div>
+            <div class="ms-place" v-if="m.place"><svg><use href="#i-mappin"/></svg><span>{{ m.place }}</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="ms-cap"><div class="ms-cap-dot"></div><span>{{ babyName }}出生啦 🎉</span></div>
+    </div>
+    <div class="empty-state ms-empty" v-else>
+      <svg><use href="#i-flag"/></svg>
+      <p>仲未有里程碑記錄<br>撳右上角 ＋ 記低寶寶嘅每個第一次</p>
+    </div>
+
+    <!-- FAB -->
+    <button class="ms-fab" @click="openAddMilestone()"><svg><use href="#i-plus"/></svg></button>
+  </div>
+
+  <!-- ===== SUB: ADD / EDIT MILESTONE ===== -->
+  <div class="sub" :class="{active: activeSub === 'ms'}" @touchstart="subSwipeStart" @touchmove="subSwipeMove" @touchend="subSwipeEnd">
+    <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">{{ msEditingId ? '編輯里程碑' : '新增里程碑' }}</span><div class="nb-ph"></div></div>
+
+    <!-- type picker -->
+    <div class="st">里程碑類型</div>
+    <div class="ms-chips">
+      <div class="ms-chip" v-for="p in msPresets" :key="p.label" :class="{sel: msName === p.label}" @click="pickMsPreset(p)">
+        <span class="ms-chip-emo">{{ p.emoji }}</span><span>{{ p.label }}</span>
+      </div>
+    </div>
+    <div class="fc"><label class="fi"><span class="fl">名稱</span><input class="fv" type="text" placeholder="自訂里程碑名稱" v-model="msName"></label></div>
+
+    <!-- date + auto age -->
+    <div class="st">日期</div>
+    <div class="fc">
+      <label class="fi"><span class="fl">日期</span><input class="fv" type="date" v-model="msDate"></label>
+      <div class="fi"><span class="fl">當時月齡</span><div class="fr"><span class="ms-age">{{ msComputedAge }}</span><span class="ms-auto">自動計算</span></div></div>
+    </div>
+
+    <!-- uploader (create) / gallery (edit) -->
+    <div class="st">相片<span class="ms-hint" v-if="!msEditingId">第一張為封面</span></div>
+    <div class="ms-uploader">
+      <div class="ms-tile" v-for="(ph, i) in msPhotos" :key="i">
+        <img :src="ph" @click="bottlePhotoZoom = ph">
+        <span class="ms-cover" v-if="i === 0">封面</span>
+        <span class="ms-tile-x" v-if="!msEditingId" @click.stop="removeMsPhoto(i)"><svg><use href="#i-x"/></svg></span>
+      </div>
+      <div class="ms-tile ms-tile-add" v-if="!msEditingId && msPhotos.length < 9" @click="pickMsPhoto()">
+        <svg><use href="#i-image"/></svg><span>相片</span>
+      </div>
+      <div class="ms-tile-empty" v-if="msEditingId && !msPhotos.length">未有相片</div>
+    </div>
+
+    <!-- note -->
+    <div class="st">記錄</div>
+    <div class="fc">
+      <textarea class="ms-note-input" maxlength="500" placeholder="記低呢一刻嘅心情同細節…" v-model="msNote"></textarea>
+      <div class="ms-count">{{ msNote.length }} / 500</div>
+    </div>
+
+    <!-- location -->
+    <div class="fc" style="margin-top:16px"><label class="fi"><span class="fl"><svg class="ms-fl-ico"><use href="#i-mappin"/></svg>地點</span><input class="fv" type="text" placeholder="添加地點（選填）" v-model="msPlace"></label></div>
+
+    <div class="ba"><a href="javascript:;" class="bp" :class="{disabled: saving}" @click="saveMilestone">{{ msEditingId ? '更新里程碑' : '保存里程碑' }}</a></div>
+    <div class="ba" v-if="msEditingId" style="padding-top:0"><a href="javascript:;" class="bp-outline ms-del" @click="deleteMilestone(msEditingId)">刪除里程碑</a></div>
   </div>
 
   <!-- ===== SUB: ADD FEED ===== -->
@@ -2544,6 +2824,7 @@ const app = createApp({
     <div class="ti" :class="{active: currentPage === 1}" @click="go(1)"><svg><use href="#i-bottle"/></svg><span>飲奶</span></div>
     <div class="ti" :class="{active: currentPage === 2}" @click="go(2)"><svg><use href="#i-diaper"/></svg><span>換片</span></div>
     <div class="ti" :class="{active: currentPage === 3}" @click="go(3)"><svg><use href="#i-moon"/></svg><span>睡眠</span></div>
+    <div class="ti" :class="{active: currentPage === 5}" @click="go(5)"><svg><use href="#i-flag"/></svg><span>里程碑</span></div>
     <div class="ti" :class="{active: currentPage === 4}" @click="go(4)"><svg><use href="#i-gear"/></svg><span>設定</span></div>
   </div>
   `,
