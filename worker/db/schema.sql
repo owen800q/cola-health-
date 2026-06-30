@@ -399,3 +399,27 @@ CREATE TABLE IF NOT EXISTS milestone_photos (
 );
 
 CREATE INDEX IF NOT EXISTS idx_milestone_photos_mid ON milestone_photos(milestone_id);
+
+-- Milestone videos are uploaded in chunks (big files)
+CREATE TABLE IF NOT EXISTS milestone_videos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  milestone_id INTEGER NOT NULL REFERENCES milestones(id) ON DELETE CASCADE,
+  mime TEXT NOT NULL DEFAULT 'video/mp4',
+  duration REAL,
+  poster TEXT,
+  size INTEGER DEFAULT 0,
+  sort_order INTEGER DEFAULT 0,
+  status TEXT DEFAULT 'uploading',
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS milestone_video_chunks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  video_id INTEGER NOT NULL REFERENCES milestone_videos(id) ON DELETE CASCADE,
+  idx INTEGER NOT NULL,
+  data TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_milestone_videos_mid ON milestone_videos(milestone_id);
+CREATE INDEX IF NOT EXISTS idx_msvchunk_vid ON milestone_video_chunks(video_id, idx);

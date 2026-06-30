@@ -725,6 +725,10 @@ const app = createApp({
     const msNote = ref('');
     const msPlace = ref('');
     const msPhotos = ref([]); // array of data URLs (cover = index 0)
+    const msVideos = ref([]); // [{ file?, poster, duration, mime, size, id?, src? }]
+    const msVideoPlay = ref(null); // streaming src of the video being played fullscreen
+    const MS_MAX_VIDEOS = 5;
+    const MS_CHUNK = 256 * 1024; // 256KB per chunk
 
     const msPresets = [
       { emoji: '🪑', label: '第一次坐' },
@@ -758,16 +762,37 @@ const app = createApp({
       return (d.getMonth() + 1) + '月' + d.getDate() + '日';
     }
 
-    // Build the prototype-style media block (1 big + 2 stacked, "+N" overlay)
+    function fmtVidDur(s) {
+      if (!s || !isFinite(s)) return '';
+      s = Math.round(s);
+      return Math.floor(s / 60) + ':' + pad(s % 60);
+    }
+
+    // Build the prototype-style media block (1 big + 2 stacked, "+N" overlay),
+    // combining photos then videos into a single ordered list of media items.
     function msMedia(m) {
-      const ph = (m && m.photos) || [];
+      const items = [];
+      ((m && m.photos) || []).forEach(function (p) {
+        items.push({ type: 'photo', thumb: p.dataUrl, full: p.dataUrl });
+      });
+      ((m && m.videos) || []).forEach(function (v) {
+        items.push({ type: 'video', thumb: v.poster, src: v.src, dur: fmtVidDur(v.duration) });
+      });
       return {
-        count: ph.length,
-        main: ph[0] ? ph[0].dataUrl : null,
-        second: ph[1] ? ph[1].dataUrl : null,
-        third: ph[2] ? ph[2].dataUrl : null,
-        more: ph.length > 3 ? ph.length - 3 : 0,
+        count: items.length,
+        items: items,
+        main: items[0] || null,
+        second: items[1] || null,
+        third: items[2] || null,
+        more: items.length > 3 ? items.length - 3 : 0,
       };
+    }
+
+    // Tap a media cell: photos zoom, videos play fullscreen
+    function openMsItem(item) {
+      if (!item) return;
+      if (item.type === 'video') msVideoPlay.value = item.src;
+      else bottlePhotoZoom.value = item.full;
     }
 
     const msComputedAge = computed(() => msAgeAt(msDate.value));
@@ -789,6 +814,7 @@ const app = createApp({
       msNote.value = '';
       msPlace.value = '';
       msPhotos.value = [];
+      msVideos.value = [];
     }
 
     function openAddMilestone() {
@@ -819,20 +845,62 @@ const app = createApp({
       reader.readAsDataURL(file);
     }
 
-    function pickMsPhoto() {
+    // Pull a poster frame + duration out of a picked video, then queue it for upload
+    function _addMsVideoFile(file) {
+      if (msVideos.value.length >= MS_MAX_VIDEOS) { showToast('最多 ' + MS_MAX_VIDEOS + ' 段影片'); return; }
+      const url = URL.createObjectURL(file);
+      const v = document.createElement('video');
+      v.preload = 'metadata';
+      v.muted = true;
+      v.playsInline = true;
+      v.src = url;
+      let done = false;
+      function finish(poster, duration) {
+        if (done) return; done = true;
+        msVideos.value.push({ file: file, poster: poster, duration: duration || 0, mime: file.type || 'video/mp4', size: file.size });
+        URL.revokeObjectURL(url);
+      }
+      v.onloadedmetadata = function () {
+        const dur = isFinite(v.duration) ? v.duration : 0;
+        try { v.currentTime = dur ? Math.min(0.1, dur / 2) : 0.1; } catch (e) { finish(null, dur); }
+      };
+      v.onseeked = function () {
+        try {
+          const canvas = document.createElement('canvas');
+          const maxW = 600;
+          const vw = v.videoWidth || maxW, vh = v.videoHeight || maxW;
+          const scale = Math.min(1, maxW / vw);
+          canvas.width = vw * scale; canvas.height = vh * scale;
+          canvas.getContext('2d').drawImage(v, 0, 0, canvas.width, canvas.height);
+          finish(canvas.toDataURL('image/jpeg', 0.6), isFinite(v.duration) ? v.duration : 0);
+        } catch (e) { finish(null, isFinite(v.duration) ? v.duration : 0); }
+      };
+      v.onerror = function () { finish(null, 0); };
+      setTimeout(function () { finish(null, isFinite(v.duration) ? v.duration : 0); }, 3000);
+    }
+
+    // Single picker for both photos and videos
+    function pickMsMedia() {
       const inp = document.createElement('input');
       inp.type = 'file';
-      inp.accept = 'image/*';
+      inp.accept = 'image/*,video/*';
       inp.multiple = true;
       inp.onchange = function () {
         const files = Array.prototype.slice.call(inp.files || []);
-        files.forEach(_addMsPhotoFile);
+        files.forEach(function (f) {
+          if (f.type && f.type.indexOf('video') === 0) _addMsVideoFile(f);
+          else _addMsPhotoFile(f);
+        });
       };
       inp.click();
     }
 
     function removeMsPhoto(i) {
       msPhotos.value.splice(i, 1);
+    }
+
+    function removeMsVideo(i) {
+      msVideos.value.splice(i, 1);
     }
 
     function editMilestone(m) {
@@ -842,7 +910,41 @@ const app = createApp({
       msNote.value = m.note || '';
       msPlace.value = m.place || '';
       msPhotos.value = (m.photos || []).map(function (p) { return p.dataUrl; });
+      msVideos.value = (m.videos || []).map(function (v) {
+        return { id: v.id, poster: v.poster, duration: v.duration, mime: v.mime, src: v.src };
+      });
       openSub('ms');
+    }
+
+    // ArrayBuffer -> base64 (chunked to avoid call-stack limits)
+    function _abToBase64(buf) {
+      const bytes = new Uint8Array(buf);
+      const len = bytes.length;
+      const step = 0x8000;
+      let binary = '';
+      for (let i = 0; i < len; i += step) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + step, len)));
+      }
+      return btoa(binary);
+    }
+
+    // Upload one video to a saved milestone, in fixed-size chunks
+    async function _uploadMsVideo(milestoneId, vobj, order) {
+      const created = await API.createMilestoneVideo(milestoneId, {
+        mime: vobj.mime, duration: vobj.duration, poster: vobj.poster, size: vobj.size, sort_order: order,
+      });
+      const vid = created.id;
+      const total = vobj.file.size;
+      let idx = 0;
+      for (let off = 0; off < total; off += MS_CHUNK) {
+        const slice = vobj.file.slice(off, off + MS_CHUNK);
+        const buf = await slice.arrayBuffer();
+        await API.uploadMilestoneVideoChunk(vid, { idx: idx, data: _abToBase64(buf) });
+        idx++;
+        const pct = Math.min(100, Math.round((off + MS_CHUNK) / total * 100));
+        showLoading('上傳影片 ' + pct + '%');
+      }
+      await API.completeMilestoneVideo(vid);
     }
 
     async function saveMilestone() {
@@ -860,12 +962,17 @@ const app = createApp({
             place: msPlace.value.trim() || null,
           });
         } else {
-          await API.createMilestone({
+          const created = await API.createMilestone({
             name: name, date: msDate.value,
             note: msNote.value.trim() || null,
             place: msPlace.value.trim() || null,
             photos: msPhotos.value,
           });
+          const mid = created && created.id;
+          const pending = msVideos.value.filter(function (v) { return v.file; });
+          for (let i = 0; i < pending.length; i++) {
+            await _uploadMsVideo(mid, pending[i], i);
+          }
         }
         hideLoading();
         showToast(msEditingId.value ? '已更新里程碑' : '已記錄里程碑');
@@ -2117,8 +2224,9 @@ const app = createApp({
       takeBottlePhoto, pickBottlePhoto, removeBottlePhoto, fmtTimeAgo,
       // Milestones
       milestones, msEditingId, msName, msDate, msNote, msPlace, msPhotos, msPresets,
-      msComputedAge, loadMilestones, openAddMilestone, pickMsPreset, pickMsPhoto,
-      removeMsPhoto, editMilestone, saveMilestone, deleteMilestone,
+      msVideos, msVideoPlay, msComputedAge, loadMilestones, openAddMilestone,
+      pickMsPreset, pickMsMedia, removeMsPhoto, removeMsVideo, openMsItem,
+      editMilestone, saveMilestone, deleteMilestone, fmtVidDur,
       // AI Chat
       chatMessages, chatInput, chatImage, chatLoading, chatError,
       sendChat, onChatImagePick, clearChatImage, clearChat,
@@ -2351,7 +2459,7 @@ const app = createApp({
 
   <!-- ===== MILESTONES (里程碑) ===== -->
   <div class="page" :class="{active: currentPage === 6}">
-    <div class="nb"><div class="nb-ph"></div><span class="nb-t">里程碑</span><span class="nb-a" @click="openAddMilestone()"><svg><use href="#i-plus"/></svg></span></div>
+    <div class="nb"><span class="nb-back" @click="go(0)"><svg><use href="#i-back"/></svg></span><span class="nb-t">里程碑</span><div class="nb-ph"></div></div>
 
     <!-- baby header card -->
     <div class="ms-head">
@@ -2374,11 +2482,17 @@ const app = createApp({
         <div class="ms-node"><div class="ms-node-dot"></div></div>
         <div class="ms-card">
           <!-- media -->
-          <div class="ms-media" v-if="m._media.count" @click="m._media.main && (bottlePhotoZoom = m._media.main)">
-            <div class="ms-media-main" :style="{ backgroundImage: 'url(' + m._media.main + ')' }"></div>
+          <div class="ms-media" v-if="m._media.count">
+            <div class="ms-media-main" :style="{ backgroundImage: 'url(' + m._media.main.thumb + ')' }" @click="openMsItem(m._media.main)">
+              <div class="ms-play" v-if="m._media.main.type === 'video'"><svg viewBox="0 0 16 18"><path d="M2 2.5v13l12-6.5L2 2.5z" fill="#fff"/></svg></div>
+              <span class="ms-vdur" v-if="m._media.main.dur">{{ m._media.main.dur }}</span>
+            </div>
             <div class="ms-media-side" v-if="m._media.count > 1">
-              <div class="ms-media-cell" :style="{ backgroundImage: 'url(' + (m._media.second || m._media.main) + ')' }"></div>
-              <div class="ms-media-cell" v-if="m._media.third" :style="{ backgroundImage: 'url(' + m._media.third + ')' }">
+              <div class="ms-media-cell" :style="{ backgroundImage: 'url(' + m._media.second.thumb + ')' }" @click="openMsItem(m._media.second)">
+                <div class="ms-play sm" v-if="m._media.second.type === 'video'"><svg viewBox="0 0 16 18"><path d="M2 2.5v13l12-6.5L2 2.5z" fill="#fff"/></svg></div>
+              </div>
+              <div class="ms-media-cell" v-if="m._media.third" :style="{ backgroundImage: 'url(' + m._media.third.thumb + ')' }" @click="openMsItem(m._media.more ? null : m._media.third)">
+                <div class="ms-play sm" v-if="m._media.third.type === 'video' && !m._media.more"><svg viewBox="0 0 16 18"><path d="M2 2.5v13l12-6.5L2 2.5z" fill="#fff"/></svg></div>
                 <div class="ms-media-more" v-if="m._media.more">+{{ m._media.more }}</div>
               </div>
             </div>
@@ -2396,7 +2510,7 @@ const app = createApp({
     </div>
     <div class="empty-state ms-empty" v-else>
       <svg><use href="#i-flag"/></svg>
-      <p>仲未有里程碑記錄<br>撳右上角 ＋ 記低寶寶嘅每個第一次</p>
+      <p>仲未有里程碑記錄<br>撳右下角 ＋ 記低寶寶嘅每個第一次</p>
     </div>
 
     <!-- FAB -->
@@ -2404,7 +2518,7 @@ const app = createApp({
   </div>
 
   <!-- ===== SUB: ADD / EDIT MILESTONE ===== -->
-  <div class="sub" :class="{active: activeSub === 'ms'}" @touchstart="subSwipeStart" @touchmove="subSwipeMove" @touchend="subSwipeEnd">
+  <div class="sub sub-ms" :class="{active: activeSub === 'ms'}" @touchstart="subSwipeStart" @touchmove="subSwipeMove" @touchend="subSwipeEnd">
     <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">{{ msEditingId ? '編輯里程碑' : '新增里程碑' }}</span><div class="nb-ph"></div></div>
 
     <!-- type picker -->
@@ -2424,17 +2538,22 @@ const app = createApp({
     </div>
 
     <!-- uploader (create) / gallery (edit) -->
-    <div class="st">相片<span class="ms-hint" v-if="!msEditingId">第一張為封面</span></div>
+    <div class="st">相片 / 影片<span class="ms-hint" v-if="!msEditingId">大影片自動分段上載</span></div>
     <div class="ms-uploader">
-      <div class="ms-tile" v-for="(ph, i) in msPhotos" :key="i">
+      <div class="ms-tile" v-for="(ph, i) in msPhotos" :key="'p'+i">
         <img :src="ph" @click="bottlePhotoZoom = ph">
         <span class="ms-cover" v-if="i === 0">封面</span>
         <span class="ms-tile-x" v-if="!msEditingId" @click.stop="removeMsPhoto(i)"><svg><use href="#i-x"/></svg></span>
       </div>
-      <div class="ms-tile ms-tile-add" v-if="!msEditingId && msPhotos.length < 9" @click="pickMsPhoto()">
-        <svg><use href="#i-image"/></svg><span>相片</span>
+      <div class="ms-tile ms-tile-video" v-for="(vd, i) in msVideos" :key="'v'+i" :style="vd.poster ? { backgroundImage: 'url(' + vd.poster + ')' } : {}" @click="vd.src && (msVideoPlay = vd.src)">
+        <div class="ms-play sm"><svg viewBox="0 0 16 18"><path d="M2 2.5v13l12-6.5L2 2.5z" fill="#fff"/></svg></div>
+        <span class="ms-vdur" v-if="fmtVidDur(vd.duration)">{{ fmtVidDur(vd.duration) }}</span>
+        <span class="ms-tile-x" v-if="!msEditingId" @click.stop="removeMsVideo(i)"><svg><use href="#i-x"/></svg></span>
       </div>
-      <div class="ms-tile-empty" v-if="msEditingId && !msPhotos.length">未有相片</div>
+      <div class="ms-tile ms-tile-add" v-if="!msEditingId && msPhotos.length < 9 && msVideos.length < 5" @click="pickMsMedia()">
+        <svg><use href="#i-image"/></svg><span>相片 / 影片</span>
+      </div>
+      <div class="ms-tile-empty" v-if="msEditingId && !msPhotos.length && !msVideos.length">未有相片或影片</div>
     </div>
 
     <!-- note -->
@@ -3071,13 +3190,18 @@ const app = createApp({
     <img :src="bottlePhotoZoom" style="max-width:100%;max-height:100%;object-fit:contain">
   </div>
 
+  <!-- ===== FULLSCREEN VIDEO PLAYER ===== -->
+  <div v-if="msVideoPlay" class="ms-player" @click.self="msVideoPlay = null">
+    <span class="ms-player-x" @click="msVideoPlay = null"><svg><use href="#i-close"/></svg></span>
+    <video :src="msVideoPlay" controls autoplay playsinline style="max-width:100%;max-height:100%"></video>
+  </div>
+
   <!-- ===== TAB BAR ===== -->
   <div class="tb">
     <div class="ti" :class="{active: currentPage === 0}" @click="go(0)"><svg><use href="#i-home"/></svg><span>主頁</span></div>
     <div class="ti" :class="{active: currentPage === 1}" @click="go(1)"><svg><use href="#i-bottle"/></svg><span>飲奶</span></div>
     <div class="ti" :class="{active: currentPage === 2}" @click="go(2)"><svg><use href="#i-diaper"/></svg><span>換片</span></div>
     <div class="ti" :class="{active: currentPage === 3}" @click="go(3)"><svg><use href="#i-moon"/></svg><span>睡眠</span></div>
-    <div class="ti" :class="{active: currentPage === 6}" @click="go(6)"><svg><use href="#i-flag"/></svg><span>里程碑</span></div>
     <div class="ti" :class="{active: currentPage === 4}" @click="go(4)"><svg><use href="#i-gear"/></svg><span>設定</span></div>
   </div>
   `,

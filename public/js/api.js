@@ -131,6 +131,10 @@
     createMilestone: (data) => request('/milestones', { method: 'POST', body: data }),
     updateMilestone: (id, data) => request('/milestones/' + id, { method: 'PUT', body: data }),
     deleteMilestone: (id) => request('/milestones/' + id, { method: 'DELETE' }),
+    // Chunked video upload (big files)
+    createMilestoneVideo: (milestoneId, meta) => request('/milestones/' + milestoneId + '/videos', { method: 'POST', body: meta }),
+    uploadMilestoneVideoChunk: (videoId, chunk) => request('/milestones/videos/' + videoId + '/chunks', { method: 'POST', body: chunk }),
+    completeMilestoneVideo: (videoId) => request('/milestones/videos/' + videoId + '/complete', { method: 'POST', body: {} }),
 
     // ---- Baby Care Rooms ----
     getBabyRooms: (params) => {
