@@ -126,6 +126,16 @@
     addBottlePhoto: (slotId, data) => request('/bottles/' + slotId + '/photos', { method: 'POST', body: data }),
     deleteBottlePhoto: (slotId, photoId) => request('/bottles/' + slotId + '/photos/' + photoId, { method: 'DELETE' }),
 
+    // ---- Milestones (里程碑) ----
+    getMilestones: () => request('/milestones'),
+    createMilestone: (data) => request('/milestones', { method: 'POST', body: data }),
+    updateMilestone: (id, data) => request('/milestones/' + id, { method: 'PUT', body: data }),
+    deleteMilestone: (id) => request('/milestones/' + id, { method: 'DELETE' }),
+    // Chunked video upload (big files)
+    createMilestoneVideo: (milestoneId, meta) => request('/milestones/' + milestoneId + '/videos', { method: 'POST', body: meta }),
+    uploadMilestoneVideoChunk: (videoId, chunk) => request('/milestones/videos/' + videoId + '/chunks', { method: 'POST', body: chunk }),
+    completeMilestoneVideo: (videoId) => request('/milestones/videos/' + videoId + '/complete', { method: 'POST', body: {} }),
+
     // ---- Baby Care Rooms ----
     getBabyRooms: (params) => {
       const q = new URLSearchParams(params).toString();

@@ -717,6 +717,309 @@ const app = createApp({
       return Math.floor(diff / 86400) + '日前';
     }
 
+    // ===== MILESTONES (里程碑) =====
+    const milestones = ref([]);
+    const msEditingId = ref(null);
+    const msName = ref('');
+    const msDate = ref('');
+    const msNote = ref('');
+    const msPlace = ref('');
+    const msPhotos = ref([]); // array of data URLs (cover = index 0)
+    const msVideos = ref([]); // [{ file?, poster, duration, mime, size, id?, src? }]
+    const msVideoPlay = ref(null); // streaming src of the video being played fullscreen
+    const MS_MAX_VIDEOS = 5;
+    const MS_CHUNK = 256 * 1024; // 256KB per chunk
+
+    const msPresets = [
+      { emoji: '🪑', label: '第一次坐' },
+      { emoji: '🔄', label: '第一次翻身' },
+      { emoji: '😄', label: '第一次笑' },
+      { emoji: '🦷', label: '第一次出牙' },
+      { emoji: '🥣', label: '第一次食輔食' },
+      { emoji: '🗣️', label: '叫爸爸/媽媽' },
+      { emoji: '🧍', label: '第一次企' },
+      { emoji: '👣', label: '第一次行' },
+    ];
+
+    // Age at a given date relative to baby's birth date (e.g. "5個月又3日")
+    function msAgeAt(dateStr) {
+      const dob = baby.value && baby.value.birth_date;
+      if (!dob || !dateStr) return '';
+      const b = new Date(dob), d = new Date(dateStr);
+      let months = (d.getFullYear() - b.getFullYear()) * 12 + (d.getMonth() - b.getMonth());
+      let anchor = new Date(b); anchor.setMonth(b.getMonth() + months);
+      if (anchor > d) { months--; anchor = new Date(b); anchor.setMonth(b.getMonth() + months); }
+      const days = Math.round((d - anchor) / 86400000);
+      if (months <= 0) return Math.max(days, 0) + '日';
+      if (months >= 12) { const y = Math.floor(months / 12), m = months % 12; return y + '歲' + (m ? m + '個月' : ''); }
+      if (days === 0) return months + '個月';
+      return months + '個月又' + days + '日';
+    }
+
+    function fmtMsDate(iso) {
+      if (!iso) return '';
+      const d = new Date(iso);
+      return (d.getMonth() + 1) + '月' + d.getDate() + '日';
+    }
+
+    function fmtVidDur(s) {
+      if (!s || !isFinite(s)) return '';
+      s = Math.round(s);
+      return Math.floor(s / 60) + ':' + pad(s % 60);
+    }
+
+    // Build the prototype-style media block (1 big + 2 stacked, "+N" overlay),
+    // combining photos then videos into a single ordered list of media items.
+    function msMedia(m) {
+      const items = [];
+      ((m && m.photos) || []).forEach(function (p) {
+        items.push({ type: 'photo', thumb: p.dataUrl, full: p.dataUrl });
+      });
+      ((m && m.videos) || []).forEach(function (v) {
+        items.push({ type: 'video', thumb: v.poster, src: v.src, dur: fmtVidDur(v.duration) });
+      });
+      return {
+        count: items.length,
+        items: items,
+        main: items[0] || null,
+        second: items[1] || null,
+        third: items[2] || null,
+        more: items.length > 3 ? items.length - 3 : 0,
+      };
+    }
+
+    // Tap a media cell: photos zoom, videos play fullscreen
+    function openMsItem(item) {
+      if (!item) return;
+      if (item.type === 'video') msVideoPlay.value = item.src;
+      else bottlePhotoZoom.value = item.full;
+    }
+
+    const msComputedAge = computed(() => msAgeAt(msDate.value));
+
+    async function loadMilestones() {
+      if (!store.babyId) return;
+      try {
+        const list = await API.getMilestones() || [];
+        milestones.value = list.map(function (m) {
+          return Object.assign({}, m, { _age: msAgeAt(m.date), _dateStr: fmtMsDate(m.date), _media: msMedia(m) });
+        });
+      } catch (e) { console.warn('Load milestones:', e); }
+    }
+
+    function resetMilestoneForm() {
+      msEditingId.value = null;
+      msName.value = '';
+      msDate.value = todayStr();
+      msNote.value = '';
+      msPlace.value = '';
+      msPhotos.value = [];
+      msVideos.value = [];
+    }
+
+    function openAddMilestone() {
+      resetMilestoneForm();
+      openSub('ms');
+    }
+
+    function pickMsPreset(p) {
+      msName.value = p.label;
+    }
+
+    function _addMsPhotoFile(file) {
+      if (msPhotos.value.length >= 9) { showToast('最多 9 張相片'); return; }
+      const reader = new FileReader();
+      reader.onerror = function () { showToast('讀取相片失敗'); };
+      reader.onload = function (ev) {
+        const dataUrl = ev.target.result;
+        const img = new Image();
+        img.onload = function () {
+          try {
+            const canvas = document.createElement('canvas');
+            const maxW = 1000;
+            const w = img.width || maxW, h = img.height || maxW;
+            const scale = Math.min(1, maxW / w);
+            canvas.width = w * scale;
+            canvas.height = h * scale;
+            canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+            msPhotos.value.push(canvas.toDataURL('image/jpeg', 0.7));
+          } catch (e) {
+            msPhotos.value.push(dataUrl); // fall back to the original image
+          }
+        };
+        // If the browser can't decode it (e.g. some HEIC), keep the original
+        img.onerror = function () { msPhotos.value.push(dataUrl); };
+        img.src = dataUrl;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    // Pull a poster frame + duration out of a picked video, then queue it for upload
+    function _addMsVideoFile(file) {
+      if (msVideos.value.length >= MS_MAX_VIDEOS) { showToast('最多 ' + MS_MAX_VIDEOS + ' 段影片'); return; }
+      const url = URL.createObjectURL(file);
+      const v = document.createElement('video');
+      v.preload = 'metadata';
+      v.muted = true;
+      v.playsInline = true;
+      v.src = url;
+      let done = false;
+      function finish(poster, duration) {
+        if (done) return; done = true;
+        msVideos.value.push({ file: file, poster: poster, duration: duration || 0, mime: file.type || 'video/mp4', size: file.size });
+        URL.revokeObjectURL(url);
+      }
+      v.onloadedmetadata = function () {
+        const dur = isFinite(v.duration) ? v.duration : 0;
+        try { v.currentTime = dur ? Math.min(0.1, dur / 2) : 0.1; } catch (e) { finish(null, dur); }
+      };
+      v.onseeked = function () {
+        try {
+          const canvas = document.createElement('canvas');
+          const maxW = 600;
+          const vw = v.videoWidth || maxW, vh = v.videoHeight || maxW;
+          const scale = Math.min(1, maxW / vw);
+          canvas.width = vw * scale; canvas.height = vh * scale;
+          canvas.getContext('2d').drawImage(v, 0, 0, canvas.width, canvas.height);
+          finish(canvas.toDataURL('image/jpeg', 0.6), isFinite(v.duration) ? v.duration : 0);
+        } catch (e) { finish(null, isFinite(v.duration) ? v.duration : 0); }
+      };
+      v.onerror = function () { finish(null, 0); };
+      setTimeout(function () { finish(null, isFinite(v.duration) ? v.duration : 0); }, 3000);
+    }
+
+    // Single picker for both photos and videos
+    function pickMsMedia() {
+      const inp = document.createElement('input');
+      inp.type = 'file';
+      inp.accept = 'image/*,video/*';
+      inp.multiple = true;
+      // iOS Safari only fires `change` reliably when the input is in the DOM
+      inp.style.cssText = 'position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0';
+      document.body.appendChild(inp);
+      let cleaned = false;
+      function cleanup() {
+        if (cleaned) return;
+        cleaned = true;
+        if (inp.parentNode) inp.parentNode.removeChild(inp);
+      }
+      inp.onchange = function () {
+        const files = Array.prototype.slice.call(inp.files || []);
+        files.forEach(function (f) {
+          if (f.type && f.type.indexOf('video') === 0) _addMsVideoFile(f);
+          else _addMsPhotoFile(f);
+        });
+        cleanup();
+      };
+      // Clean up if the picker is dismissed without choosing anything
+      window.addEventListener('focus', function onFocus() {
+        window.removeEventListener('focus', onFocus);
+        setTimeout(cleanup, 1500);
+      }, { once: true });
+      inp.click();
+    }
+
+    function removeMsPhoto(i) {
+      msPhotos.value.splice(i, 1);
+    }
+
+    function removeMsVideo(i) {
+      msVideos.value.splice(i, 1);
+    }
+
+    function editMilestone(m) {
+      msEditingId.value = m.id;
+      msName.value = m.name;
+      msDate.value = m.date;
+      msNote.value = m.note || '';
+      msPlace.value = m.place || '';
+      msPhotos.value = (m.photos || []).map(function (p) { return p.dataUrl; });
+      msVideos.value = (m.videos || []).map(function (v) {
+        return { id: v.id, poster: v.poster, duration: v.duration, mime: v.mime, src: v.src };
+      });
+      openSub('ms');
+    }
+
+    // ArrayBuffer -> base64 (chunked to avoid call-stack limits)
+    function _abToBase64(buf) {
+      const bytes = new Uint8Array(buf);
+      const len = bytes.length;
+      const step = 0x8000;
+      let binary = '';
+      for (let i = 0; i < len; i += step) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + step, len)));
+      }
+      return btoa(binary);
+    }
+
+    // Upload one video to a saved milestone, in fixed-size chunks
+    async function _uploadMsVideo(milestoneId, vobj, order) {
+      const created = await API.createMilestoneVideo(milestoneId, {
+        mime: vobj.mime, duration: vobj.duration, poster: vobj.poster, size: vobj.size, sort_order: order,
+      });
+      const vid = created.id;
+      const total = vobj.file.size;
+      let idx = 0;
+      for (let off = 0; off < total; off += MS_CHUNK) {
+        const slice = vobj.file.slice(off, off + MS_CHUNK);
+        const buf = await slice.arrayBuffer();
+        await API.uploadMilestoneVideoChunk(vid, { idx: idx, data: _abToBase64(buf) });
+        idx++;
+        const pct = Math.min(100, Math.round((off + MS_CHUNK) / total * 100));
+        showLoading('上傳影片 ' + pct + '%');
+      }
+      await API.completeMilestoneVideo(vid);
+    }
+
+    async function saveMilestone() {
+      if (saving.value) return;
+      const name = msName.value.trim();
+      if (!name) { showToast('請輸入或選擇里程碑類型'); return; }
+      if (!msDate.value) { showToast('請選擇日期'); return; }
+      saving.value = true;
+      showLoading('儲存中...');
+      try {
+        if (msEditingId.value) {
+          await API.updateMilestone(msEditingId.value, {
+            name: name, date: msDate.value,
+            note: msNote.value.trim() || null,
+            place: msPlace.value.trim() || null,
+          });
+        } else {
+          const created = await API.createMilestone({
+            name: name, date: msDate.value,
+            note: msNote.value.trim() || null,
+            place: msPlace.value.trim() || null,
+            photos: msPhotos.value,
+          });
+          const mid = created && created.id;
+          const pending = msVideos.value.filter(function (v) { return v.file; });
+          for (let i = 0; i < pending.length; i++) {
+            await _uploadMsVideo(mid, pending[i], i);
+          }
+        }
+        hideLoading();
+        showToast(msEditingId.value ? '已更新里程碑' : '已記錄里程碑');
+        closeSub();
+        resetMilestoneForm();
+        loadMilestones();
+      } catch (e) { hideLoading(); showToast('儲存失敗'); }
+      finally { saving.value = false; }
+    }
+
+    async function deleteMilestone(id) {
+      const ok = await confirmDialog('刪除里程碑', '確定刪除此里程碑？此操作無法復原。');
+      if (!ok) return;
+      showLoading('刪除中...');
+      try {
+        await API.deleteMilestone(id);
+        hideLoading();
+        showToast('已刪除');
+        closeSub();
+        loadMilestones();
+      } catch (e) { hideLoading(); showToast('刪除失敗'); }
+    }
+
     // ===== AI CHAT =====
     const chatMessages = ref([]);
     const chatInput = ref('');
@@ -884,11 +1187,17 @@ const app = createApp({
 
     // Navigation
     function go(i) { currentPage.value = i; }
+    let _subScrollY = 0;
     function openSub(name) {
       // Reset editing state if NOT triggered by editFeed/editDiaper/editSleep
       if (!editingId.value) {
         editingType.value = null;
       }
+      // iOS Safari mis-anchors position:fixed overlays when the page is
+      // scrolled (the sub renders mid-page over the content). Reset scroll to
+      // the top so the fixed overlay lines up with the viewport.
+      _subScrollY = window.scrollY || window.pageYOffset || 0;
+      try { window.scrollTo(0, 0); } catch (e) {}
       activeSub.value = name;
       if (name === 'he') loadVaccines();
     }
@@ -896,6 +1205,9 @@ const app = createApp({
       activeSub.value = null;
       editingId.value = null;
       editingType.value = null;
+      // Restore the underlying page scroll position after the overlay closes
+      const y = _subScrollY;
+      nextTick(function () { try { window.scrollTo(0, y); } catch (e) {} });
     }
 
     // ===== DATA LOADING =====
@@ -1899,6 +2211,7 @@ const app = createApp({
       if (p === 2) loadDiaperHistory();
       if (p === 3) loadSleepHistory();
       if (p === 5) { loadSolidFoods(); loadSolidFoodList(); }
+      if (p === 6) loadMilestones();
     });
 
     return {
@@ -1942,6 +2255,11 @@ const app = createApp({
       // Bottle Assembly
       bottleSlots, bottlePhotoZoom, loadBottleSlots, addBottleSlot, removeBottleSlot,
       takeBottlePhoto, pickBottlePhoto, removeBottlePhoto, fmtTimeAgo,
+      // Milestones
+      milestones, msEditingId, msName, msDate, msNote, msPlace, msPhotos, msPresets,
+      msVideos, msVideoPlay, msComputedAge, loadMilestones, openAddMilestone,
+      pickMsPreset, pickMsMedia, removeMsPhoto, removeMsVideo, openMsItem,
+      editMilestone, saveMilestone, deleteMilestone, fmtVidDur,
       // AI Chat
       chatMessages, chatInput, chatImage, chatLoading, chatError,
       sendChat, onChatImagePick, clearChatImage, clearChat,
@@ -2028,6 +2346,7 @@ const app = createApp({
       <div class="gi" @click="openSub('bt'); loadBottleSlots()"><div class="gi-ico" style="color:var(--teal)"><svg><use href="#i-bottle"/></svg></div><span>奶瓶組裝</span></div>
       <div class="gi" @click="openSub('ai')"><div class="gi-ico" style="color:var(--purple)"><svg><use href="#i-chat"/></svg></div><span>問 AI</span></div>
       <div class="gi" @click="openMbRooms()"><div class="gi-ico" style="color:var(--green)"><svg><use href="#i-mappin"/></svg></div><span>母嬰室</span></div>
+      <div class="gi" @click="go(6)"><div class="gi-ico" style="color:var(--green)"><svg><use href="#i-flag"/></svg></div><span>里程碑</span></div>
     </div>
     <div class="st">今日記錄</div>
     <div class="cs" v-if="recentItems.length">
@@ -2169,6 +2488,119 @@ const app = createApp({
       <span class="nn" style="color:var(--blue)"><svg><use href="#i-info"/></svg></span>
       <div class="nb2">資料儲存於 Cloudflare D1 數據庫，安全可靠。支援 PWA 離線使用。</div>
     </div>
+  </div>
+
+  <!-- ===== MILESTONES (里程碑) ===== -->
+  <div class="page" :class="{active: currentPage === 6}">
+    <div class="nb"><span class="nb-back" @click="go(0)"><svg><use href="#i-back"/></svg></span><span class="nb-t">里程碑</span><div class="nb-ph"></div></div>
+
+    <!-- baby header card -->
+    <div class="ms-head">
+      <div class="ms-av" @click="pickAvatar"><img v-if="avatarUrl" :src="avatarUrl"><svg v-else><use href="#i-baby"/></svg></div>
+      <div class="ms-hi">
+        <h3>{{ babyName }}</h3>
+        <p>{{ babyBirthday }}出生</p>
+      </div>
+      <div class="ms-now"><span class="ms-now-l">現在</span><span class="ms-now-v">{{ babyAge }}</span></div>
+    </div>
+
+    <div class="ms-prog">
+      <span>已記錄</span><strong>{{ milestones.length }} 個里程碑</strong>
+    </div>
+
+    <!-- timeline -->
+    <div class="ms-tl" v-if="milestones.length">
+      <div class="ms-line"></div>
+      <div class="ms-item" v-for="m in milestones" :key="m.id">
+        <div class="ms-node"><div class="ms-node-dot"></div></div>
+        <div class="ms-card">
+          <!-- media -->
+          <div class="ms-media" v-if="m._media.count">
+            <div class="ms-media-main" :style="{ backgroundImage: 'url(' + m._media.main.thumb + ')' }" @click="openMsItem(m._media.main)">
+              <div class="ms-play" v-if="m._media.main.type === 'video'"><svg viewBox="0 0 16 18"><path d="M2 2.5v13l12-6.5L2 2.5z" fill="#fff"/></svg></div>
+              <span class="ms-vdur" v-if="m._media.main.dur">{{ m._media.main.dur }}</span>
+            </div>
+            <div class="ms-media-side" v-if="m._media.count > 1">
+              <div class="ms-media-cell" :style="{ backgroundImage: 'url(' + m._media.second.thumb + ')' }" @click="openMsItem(m._media.second)">
+                <div class="ms-play sm" v-if="m._media.second.type === 'video'"><svg viewBox="0 0 16 18"><path d="M2 2.5v13l12-6.5L2 2.5z" fill="#fff"/></svg></div>
+              </div>
+              <div class="ms-media-cell" v-if="m._media.third" :style="{ backgroundImage: 'url(' + m._media.third.thumb + ')' }" @click="openMsItem(m._media.more ? null : m._media.third)">
+                <div class="ms-play sm" v-if="m._media.third.type === 'video' && !m._media.more"><svg viewBox="0 0 16 18"><path d="M2 2.5v13l12-6.5L2 2.5z" fill="#fff"/></svg></div>
+                <div class="ms-media-more" v-if="m._media.more">+{{ m._media.more }}</div>
+              </div>
+            </div>
+          </div>
+          <!-- text -->
+          <div class="ms-body" @click="editMilestone(m)">
+            <div class="ms-body-h"><span class="ms-name">{{ m.name }}</span><span class="ms-date">{{ m._dateStr }}</span></div>
+            <span class="ms-age">{{ m._age }}</span>
+            <div class="ms-note" v-if="m.note">{{ m.note }}</div>
+            <div class="ms-place" v-if="m.place"><svg><use href="#i-mappin"/></svg><span>{{ m.place }}</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="ms-cap"><div class="ms-cap-dot"></div><span>{{ babyName }}出生啦 🎉</span></div>
+    </div>
+    <div class="empty-state ms-empty" v-else>
+      <svg><use href="#i-flag"/></svg>
+      <p>仲未有里程碑記錄<br>撳右下角 ＋ 記低寶寶嘅每個第一次</p>
+    </div>
+
+    <!-- FAB -->
+    <button class="ms-fab" @click="openAddMilestone()"><svg><use href="#i-plus"/></svg></button>
+  </div>
+
+  <!-- ===== SUB: ADD / EDIT MILESTONE ===== -->
+  <div class="sub sub-ms" :class="{active: activeSub === 'ms'}" @touchstart="subSwipeStart" @touchmove="subSwipeMove" @touchend="subSwipeEnd">
+    <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">{{ msEditingId ? '編輯里程碑' : '新增里程碑' }}</span><div class="nb-ph"></div></div>
+
+    <!-- type picker -->
+    <div class="st">里程碑類型</div>
+    <div class="ms-chips">
+      <div class="ms-chip" v-for="p in msPresets" :key="p.label" :class="{sel: msName === p.label}" @click="pickMsPreset(p)">
+        <span class="ms-chip-emo">{{ p.emoji }}</span><span>{{ p.label }}</span>
+      </div>
+    </div>
+    <div class="fc" style="margin-top:16px"><label class="fi"><span class="fl">名稱</span><input class="fv" type="text" placeholder="自訂里程碑名稱" v-model="msName"></label></div>
+
+    <!-- date + auto age -->
+    <div class="st">日期</div>
+    <div class="fc">
+      <label class="fi"><span class="fl">日期</span><input class="fv" type="date" v-model="msDate"></label>
+      <div class="fi"><span class="fl">當時月齡</span><div class="fr"><span class="ms-age">{{ msComputedAge }}</span><span class="ms-auto">自動計算</span></div></div>
+    </div>
+
+    <!-- uploader (create) / gallery (edit) -->
+    <div class="st">相片 / 影片<span class="ms-hint" v-if="!msEditingId">大影片自動分段上載</span></div>
+    <div class="ms-uploader">
+      <div class="ms-tile" v-for="(ph, i) in msPhotos" :key="'p'+i">
+        <img :src="ph" @click="bottlePhotoZoom = ph">
+        <span class="ms-cover" v-if="i === 0">封面</span>
+        <span class="ms-tile-x" v-if="!msEditingId" @click.stop="removeMsPhoto(i)"><svg><use href="#i-x"/></svg></span>
+      </div>
+      <div class="ms-tile ms-tile-video" v-for="(vd, i) in msVideos" :key="'v'+i" :style="vd.poster ? { backgroundImage: 'url(' + vd.poster + ')' } : {}" @click="vd.src && (msVideoPlay = vd.src)">
+        <div class="ms-play sm"><svg viewBox="0 0 16 18"><path d="M2 2.5v13l12-6.5L2 2.5z" fill="#fff"/></svg></div>
+        <span class="ms-vdur" v-if="fmtVidDur(vd.duration)">{{ fmtVidDur(vd.duration) }}</span>
+        <span class="ms-tile-x" v-if="!msEditingId" @click.stop="removeMsVideo(i)"><svg><use href="#i-x"/></svg></span>
+      </div>
+      <div class="ms-tile ms-tile-add" v-if="!msEditingId && msPhotos.length < 9 && msVideos.length < 5" @click="pickMsMedia()">
+        <svg><use href="#i-image"/></svg><span>相片 / 影片</span>
+      </div>
+      <div class="ms-tile-empty" v-if="msEditingId && !msPhotos.length && !msVideos.length">未有相片或影片</div>
+    </div>
+
+    <!-- note -->
+    <div class="st">記錄</div>
+    <div class="fc">
+      <textarea class="ms-note-input" maxlength="500" placeholder="記低呢一刻嘅心情同細節…" v-model="msNote"></textarea>
+      <div class="ms-count">{{ msNote.length }} / 500</div>
+    </div>
+
+    <!-- location -->
+    <div class="fc" style="margin-top:16px"><label class="fi"><span class="fl"><svg class="ms-fl-ico"><use href="#i-mappin"/></svg>地點</span><input class="fv" type="text" placeholder="添加地點（選填）" v-model="msPlace"></label></div>
+
+    <div class="ba"><a href="javascript:;" class="bp" :class="{disabled: saving}" @click="saveMilestone">{{ msEditingId ? '更新里程碑' : '保存里程碑' }}</a></div>
+    <div class="ba" v-if="msEditingId" style="padding-top:0"><a href="javascript:;" class="bp-outline ms-del" @click="deleteMilestone(msEditingId)">刪除里程碑</a></div>
   </div>
 
   <!-- ===== SOLID FOOD (輔食) LIST ===== -->
@@ -2789,6 +3221,12 @@ const app = createApp({
   <!-- ===== FULLSCREEN PHOTO OVERLAY ===== -->
   <div v-if="bottlePhotoZoom" @click="bottlePhotoZoom = null" style="position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.9);display:flex;align-items:center;justify-content:center;cursor:pointer">
     <img :src="bottlePhotoZoom" style="max-width:100%;max-height:100%;object-fit:contain">
+  </div>
+
+  <!-- ===== FULLSCREEN VIDEO PLAYER ===== -->
+  <div v-if="msVideoPlay" class="ms-player" @click.self="msVideoPlay = null">
+    <span class="ms-player-x" @click="msVideoPlay = null"><svg><use href="#i-close"/></svg></span>
+    <video :src="msVideoPlay" controls autoplay playsinline style="max-width:100%;max-height:100%"></video>
   </div>
 
   <!-- ===== TAB BAR ===== -->

@@ -17,6 +17,7 @@ import { bottleRoutes } from './routes/bottle';
 import { aiRoutes } from './routes/ai';
 import { temperatureRoutes } from './routes/temperature';
 import { babyRoomsRoutes } from './routes/babyrooms';
+import { milestoneRoutes } from './routes/milestone';
 import { solidFoodRoutes } from './routes/solidfood';
 import { handleScheduled } from './scheduled';
 
@@ -54,6 +55,7 @@ app.route('/api/bottles', bottleRoutes);
 app.route('/api/ai', aiRoutes);
 app.route('/api/temperatures', temperatureRoutes);
 app.route('/api/babyrooms', babyRoomsRoutes);
+app.route('/api/milestones', milestoneRoutes);
 app.route('/api/solidfoods', solidFoodRoutes);
 
 // Serve static files from Workers Sites KV
