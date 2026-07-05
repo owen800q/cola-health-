@@ -89,6 +89,34 @@ CREATE TABLE IF NOT EXISTS solid_foods (
   created_at TEXT DEFAULT (datetime('now'))
 );
 
+-- Solid food introduction schedule (輔食引入表) — the two-week plan template
+CREATE TABLE IF NOT EXISTS solid_food_schedule (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  sort_order  INTEGER NOT NULL,
+  day_label   TEXT    NOT NULL,   -- e.g. 'Day 1–3'
+  food_name   TEXT    NOT NULL,   -- e.g. '南瓜泥'
+  category    TEXT    NOT NULL,   -- 'veg' | 'fruit'
+  watch_note  TEXT    NOT NULL
+);
+
+-- Progress against the schedule (actuals; one row per schedule item)
+CREATE TABLE IF NOT EXISTS solid_food_progress (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  schedule_id       INTEGER NOT NULL UNIQUE REFERENCES solid_food_schedule(id),
+  status            TEXT    NOT NULL DEFAULT 'pending', -- 'pending' | 'trying' | 'done' | 'reaction'
+  actual_start_date TEXT,          -- ISO date
+  notes             TEXT,          -- observed reactions / stool / skin
+  created_at        TEXT    NOT NULL DEFAULT (datetime('now')),
+  updated_at        TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Seed the two-week plan (pumpkin-first, veg before fruit; idempotent)
+INSERT OR IGNORE INTO solid_food_schedule (id, sort_order, day_label, food_name, category, watch_note) VALUES (1, 1, 'Day 1–3', '南瓜泥', 'veg', '過敏、皮膚、大便軟硬');
+INSERT OR IGNORE INTO solid_food_schedule (id, sort_order, day_label, food_name, category, watch_note) VALUES (2, 2, 'Day 4–6', '番薯泥', 'veg', '大便偏橙黃屬正常、有冇出疹');
+INSERT OR IGNORE INTO solid_food_schedule (id, sort_order, day_label, food_name, category, watch_note) VALUES (3, 3, 'Day 7–9', '甘筍泥', 'veg', '大便可能偏橙(正常)、口周有冇紅');
+INSERT OR IGNORE INTO solid_food_schedule (id, sort_order, day_label, food_name, category, watch_note) VALUES (4, 4, 'Day 10–12', '蘋果泥(蒸熟)', 'fruit', '首個水果、留意肚瀉或便秘');
+INSERT OR IGNORE INTO solid_food_schedule (id, sort_order, day_label, food_name, category, watch_note) VALUES (5, 5, 'Day 13–15', '梨泥', 'fruit', '梨有輕微通便、留意大便次數');
+
 -- Growth records
 CREATE TABLE IF NOT EXISTS growth (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

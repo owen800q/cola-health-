@@ -501,6 +501,71 @@ label.fi { cursor: pointer; }
 /* intro note inside the food list */
 .food-intro { margin: 16px 16px 4px; }
 
+/* ===== 輔食引入表 (Solid food introduction schedule) — WeUI-styled, scoped under .sfs ===== */
+.sfs {
+  --weui-BG-0: #ededed;              /* page background */
+  --weui-BG-2: #ffffff;              /* card / cell background */
+  --sfs-text-primary: rgba(0,0,0,0.9);
+  --sfs-text-secondary: rgba(0,0,0,0.5);
+  --sfs-text-tips: rgba(0,0,0,0.3);
+  --sfs-divider: rgba(0,0,0,0.1);
+  --sfs-tag-veg: #09BB07;            /* root-veg green */
+  --sfs-tag-fruit: #FA9D3B;          /* fruit orange (WeUI warn family) */
+  --sfs-blue: #10AEFF;               /* trying */
+  --sfs-red: #F43530;                /* reaction */
+  background: var(--weui-BG-0);
+  font-family: system-ui, -apple-system, 'PingFang HK', 'Helvetica Neue', sans-serif;
+  line-height: 1.6;
+  padding-bottom: calc(24px + env(safe-area-inset-bottom));
+}
+.sfs .nb-t.sfs-title { font-size: 18px; }
+.sfs-subtl { padding: 12px 16px 0; font-size: 13px; color: var(--sfs-text-tips); text-align: center; }
+/* panel: white card with hairline-separated cells */
+.sfs-panel { margin: 12px 16px 16px; background: var(--weui-BG-2); border-radius: 8px; overflow: hidden; }
+.sfs-cell { display: flex; align-items: center; gap: 12px; padding: 12px 16px; min-height: 44px; cursor: pointer; position: relative; }
+.sfs-cell:active { background: #ececec; }
+.sfs-cell + .sfs-cell::before { content: ''; position: absolute; top: 0; left: 16px; right: 0; height: 1px; background: var(--sfs-divider); transform: scaleY(0.5); transform-origin: top; }
+.sfs-main { flex: 1; min-width: 0; }
+.sfs-day { font-size: 12px; color: var(--sfs-text-secondary); }
+.sfs-name { font-size: 16px; font-weight: 700; color: var(--sfs-text-primary); display: flex; align-items: center; gap: 6px; }
+.sfs-tag { font-size: 11px; font-weight: 500; padding: 1px 7px; border-radius: 3px; flex-shrink: 0; }
+.sfs-tag-veg { background: rgba(9,187,7,0.12); color: #067d05; }
+.sfs-tag-fruit { background: rgba(250,157,59,0.16); color: #b25e0e; }
+.sfs-watch { font-size: 14px; color: var(--sfs-text-secondary); margin-top: 1px; }
+.sfs-meta { font-size: 12px; color: var(--sfs-text-tips); margin-top: 2px; display: flex; flex-wrap: wrap; gap: 2px 10px; }
+.sfs-right { flex-shrink: 0; display: flex; align-items: center; gap: 4px; }
+.sfs-st { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 10px; white-space: nowrap; }
+.sfs-st-pending { background: rgba(0,0,0,0.06); color: var(--sfs-text-secondary); }
+.sfs-st-trying { background: rgba(16,174,255,0.12); color: #0b7ab3; }
+.sfs-st-done { background: rgba(9,187,7,0.12); color: #067d05; }
+.sfs-st-reaction { background: rgba(244,53,48,0.10); color: #c22722; }
+.sfs-arrow { width: 14px; height: 14px; color: var(--sfs-text-tips); }
+/* G6PD footer note (highlighted box) */
+.sfs-foot { margin: 0 16px 24px; padding: 12px 14px; border-radius: 8px; background: rgba(9,187,7,0.08); border: 1px solid rgba(9,187,7,0.25); font-size: 13px; color: #0a7a08; }
+/* progress editor actionsheet */
+.sfs-mask { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 120; display: flex; align-items: flex-end; }
+.sfs-sheet { width: 100%; background: var(--weui-BG-2); border-radius: 12px 12px 0 0; padding: 16px 16px calc(24px + env(safe-area-inset-bottom)); animation: sfs-up .25s ease; }
+@keyframes sfs-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+.sfs-sheet-hd { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.sfs-sheet-t { font-size: 17px; font-weight: 700; color: var(--sfs-text-primary); }
+.sfs-sheet-d { font-size: 13px; color: var(--sfs-text-secondary); margin-top: 1px; }
+.sfs-sheet-x { padding: 10px; margin: -10px; color: var(--sfs-text-tips); cursor: pointer; display: flex; flex-shrink: 0; }
+.sfs-sheet-x svg { width: 20px; height: 20px; }
+.sfs-sheet-lb { font-size: 13px; color: var(--sfs-text-secondary); margin: 14px 0 6px; }
+.sfs-stgrid { display: flex; gap: 8px; }
+.sfs-stbtn { flex: 1; min-height: 44px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; text-align: center; padding: 8px 2px; border-radius: 8px; font-size: 13px; border: 1px solid var(--sfs-divider); color: var(--sfs-text-secondary); background: #f7f7f7; cursor: pointer; user-select: none; }
+.sfs-stbtn-pending.on { background: rgba(0,0,0,0.08); color: var(--sfs-text-primary); border-color: rgba(0,0,0,0.25); font-weight: 600; }
+.sfs-stbtn-trying.on { background: rgba(16,174,255,0.12); color: #0b7ab3; border-color: var(--sfs-blue); font-weight: 600; }
+.sfs-stbtn-done.on { background: rgba(9,187,7,0.12); color: #067d05; border-color: var(--sfs-tag-veg); font-weight: 600; }
+.sfs-stbtn-reaction.on { background: rgba(244,53,48,0.10); color: #c22722; border-color: var(--sfs-red); font-weight: 600; }
+.sfs-input { width: 100%; box-sizing: border-box; min-height: 44px; border: 1px solid var(--sfs-divider); border-radius: 8px; padding: 10px 12px; font-size: 15px; background: #f7f7f7; outline: none; font-family: inherit; color: var(--sfs-text-primary); }
+.sfs-input:focus { border-color: var(--sfs-blue); background: var(--weui-BG-2); }
+.sfs-input::placeholder { color: var(--sfs-text-tips); }
+.sfs-save { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 20px; height: 48px; border-radius: 8px; background: #09BB07; color: #fff; font-size: 17px; font-weight: 500; text-decoration: none; cursor: pointer; }
+.sfs-save:active { background: #079905; }
+.sfs-save.disabled { opacity: 0.6; pointer-events: none; }
+.sfs-save-spin { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.4); border-top-color: #fff; border-radius: 50%; animation: spin .8s linear infinite; }
+
 /* ===== Growth Curve ===== */
 .gc-sum { margin: 12px 16px 0; padding: 12px 14px; border-radius: 10px; border: 1px solid transparent; }
 .gc-sum-green { background: rgba(9,187,7,0.08); border-color: rgba(9,187,7,0.25); color: #0a7a08; }
