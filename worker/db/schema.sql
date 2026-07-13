@@ -116,6 +116,7 @@ INSERT OR IGNORE INTO solid_food_schedule (id, sort_order, day_label, food_name,
 INSERT OR IGNORE INTO solid_food_schedule (id, sort_order, day_label, food_name, category, watch_note) VALUES (3, 3, 'Day 7–9', '甘筍泥', 'veg', '大便可能偏橙(正常)、口周有冇紅');
 INSERT OR IGNORE INTO solid_food_schedule (id, sort_order, day_label, food_name, category, watch_note) VALUES (4, 4, 'Day 10–12', '蘋果泥(蒸熟)', 'fruit', '首個水果、留意肚瀉或便秘');
 INSERT OR IGNORE INTO solid_food_schedule (id, sort_order, day_label, food_name, category, watch_note) VALUES (5, 5, 'Day 13–15', '梨泥', 'fruit', '梨有輕微通便、留意大便次數');
+INSERT OR IGNORE INTO solid_food_schedule (id, sort_order, day_label, food_name, category, watch_note) VALUES (6, 6, 'Day 16–18', '紅蘿蔔泥', 'veg', '大便偏橙屬正常、食得多皮膚微黃屬正常');
 
 -- Growth records
 CREATE TABLE IF NOT EXISTS growth (

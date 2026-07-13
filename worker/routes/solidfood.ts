@@ -51,22 +51,22 @@ async function ensureSchema(db: D1Database) {
   ensured = true;
 }
 
-// The two-week introduction plan (pumpkin-first, veg before fruit).
+// The introduction plan (pumpkin-first, veg before fruit).
+// Ids are explicit so INSERT OR IGNORE stays idempotent AND rows added to
+// this list later still reach databases that were seeded before.
 const SCHEDULE_SEED: [number, string, string, string, string][] = [
   [1, 'Day 1–3', '南瓜泥', 'veg', '過敏、皮膚、大便軟硬'],
   [2, 'Day 4–6', '番薯泥', 'veg', '大便偏橙黃屬正常、有冇出疹'],
   [3, 'Day 7–9', '甘筍泥', 'veg', '大便可能偏橙(正常)、口周有冇紅'],
   [4, 'Day 10–12', '蘋果泥(蒸熟)', 'fruit', '首個水果、留意肚瀉或便秘'],
   [5, 'Day 13–15', '梨泥', 'fruit', '梨有輕微通便、留意大便次數'],
+  [6, 'Day 16–18', '紅蘿蔔泥', 'veg', '大便偏橙屬正常、食得多皮膚微黃屬正常'],
 ];
 
-// Idempotent: only seeds when the schedule table is empty.
 async function seedSchedule(db: D1Database) {
-  const row = await db.prepare('SELECT COUNT(*) AS n FROM solid_food_schedule').first<{ n: number }>();
-  if (row && row.n > 0) return;
-  await db.batch(SCHEDULE_SEED.map(([sort, day, food, cat, note]) =>
-    db.prepare('INSERT INTO solid_food_schedule (sort_order, day_label, food_name, category, watch_note) VALUES (?, ?, ?, ?, ?)')
-      .bind(sort, day, food, cat, note)
+  await db.batch(SCHEDULE_SEED.map(([id, day, food, cat, note]) =>
+    db.prepare('INSERT OR IGNORE INTO solid_food_schedule (id, sort_order, day_label, food_name, category, watch_note) VALUES (?, ?, ?, ?, ?, ?)')
+      .bind(id, id, day, food, cat, note)
   ));
 }
 

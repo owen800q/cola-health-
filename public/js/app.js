@@ -2796,7 +2796,7 @@ const app = createApp({
     </div>
     <div class="empty-state" v-else-if="!sfsLoading"><svg><use href="#i-food"/></svg><p>暫無引入表資料</p></div>
 
-    <div class="sfs-foot">G6PD 安全：以上五樣均不涉蠶豆或禁忌成分，可放心。</div>
+    <div class="sfs-foot">G6PD 安全：以上食材均不涉蠶豆或禁忌成分，可放心。</div>
 
     <!-- Progress editor (actionsheet) -->
     <div class="sfs-mask" v-if="sfsEditing" @click.self="closeSfsEditor">
