@@ -213,6 +213,24 @@ const app = createApp({
     const sfForm = reactive({ time: '', category: '蔬菜', name: '', texture: '泥蓉', first: false, amount: '食一半', reaction: '一般', abnormal: false, symptoms: [], note: '' });
     const sfReactionEmoji = (v) => (SF_REACTIONS.find(r => r.v === v) || {}).em || '';
 
+    // Solid-food introduction schedule (輔食引入表)
+    const sfSchedule = ref([]);
+    const SFS_STATUS_META = {
+      pending: { label: '未開始', cls: 'sfs-pl-grey' },
+      trying: { label: '試緊', cls: 'sfs-pl-blue' },
+      done: { label: '完成', cls: 'sfs-pl-green' },
+      reaction: { label: '有反應', cls: 'sfs-pl-red' },
+    };
+    const SFS_CATEGORIES = [
+      { v: 'veg', label: '根莖菜' },
+      { v: 'fruit', label: '水果' },
+      { v: 'other', label: '其他' },
+    ];
+    const sfsCatMeta = (v) => SFS_CATEGORIES.find(c => c.v === v) || SFS_CATEGORIES[2];
+    const sfsEditing = ref(null); // schedule item currently in the editor
+    const sfsForm = reactive({ status: 'pending', date: '', notes: '' });
+    const sfsAddForm = reactive({ name: '', category: 'veg', note: '' });
+
     // Sleep page
     const sleepHistory = ref([]);
     const isSleeping = ref(false);
@@ -1573,6 +1591,74 @@ const app = createApp({
       finally { saving.value = false; }
     }
 
+    // ===== SOLID FOOD INTRODUCTION SCHEDULE (輔食引入表) ACTIONS =====
+    async function loadSfSchedule() {
+      try { sfSchedule.value = await API.getSolidSchedule() || []; }
+      catch (e) { console.warn('Load schedule:', e); }
+    }
+    function openSfSchedule() { go(7); }
+    function openSfsEditor(item) {
+      sfsEditing.value = item;
+      sfsForm.status = item.status || 'pending';
+      sfsForm.date = item.actual_start_date || '';
+      sfsForm.notes = item.notes || '';
+      openSub('sfsE');
+    }
+    async function saveSfsProgress() {
+      if (!sfsEditing.value || saving.value) return;
+      saving.value = true;
+      showLoading('儲存中...');
+      try {
+        await API.saveSolidScheduleProgress(sfsEditing.value.id, {
+          status: sfsForm.status,
+          actual_start_date: sfsForm.date || null,
+          notes: sfsForm.notes || null,
+        });
+        hideLoading();
+        showToast('進度已更新');
+        closeSub();
+        loadSfSchedule();
+      } catch (e) { hideLoading(); showToast('儲存失敗'); }
+      finally { saving.value = false; }
+    }
+    function openSfsAdd() {
+      sfsAddForm.name = '';
+      sfsAddForm.category = 'veg';
+      sfsAddForm.note = '';
+      openSub('sfsA');
+    }
+    async function saveSfsItem() {
+      const name = sfsAddForm.name.trim();
+      if (!name) return showToast('請輸入食材名稱');
+      if (saving.value) return;
+      saving.value = true;
+      showLoading('儲存中...');
+      try {
+        await API.createSolidScheduleItem({ food_name: name, category: sfsAddForm.category, watch_note: sfsAddForm.note.trim() });
+        hideLoading();
+        showToast('已加入引入表');
+        closeSub();
+        loadSfSchedule();
+      } catch (e) { hideLoading(); showToast('儲存失敗'); }
+      finally { saving.value = false; }
+    }
+    async function deleteSfsItem() {
+      const item = sfsEditing.value;
+      if (!item || saving.value) return;
+      const ok = await confirmDialog('確認刪除', '會一併刪除「' + item.food_name + '」嘅試食進度');
+      if (!ok) return;
+      saving.value = true;
+      showLoading('刪除中...');
+      try {
+        await API.deleteSolidScheduleItem(item.id);
+        hideLoading();
+        showToast('已刪除');
+        closeSub();
+        loadSfSchedule();
+      } catch (e) { hideLoading(); showToast('刪除失敗'); }
+      finally { saving.value = false; }
+    }
+
     // ===== SLEEP ACTIONS =====
     function restoreSleepTimer() {
       const saved = localStorage.getItem('sleepTimer');
@@ -2194,6 +2280,7 @@ const app = createApp({
         else if (p === 2) loadDiaperHistory();
         else if (p === 3) loadSleepHistory();
         else if (p === 5) { loadSolidFoods(); loadSolidFoodList(); }
+        else if (p === 7) loadSfSchedule();
       }
     }
     document.addEventListener('visibilitychange', onVisibilityChange);
@@ -2212,6 +2299,7 @@ const app = createApp({
       if (p === 3) loadSleepHistory();
       if (p === 5) { loadSolidFoods(); loadSolidFoodList(); }
       if (p === 6) loadMilestones();
+      if (p === 7) loadSfSchedule();
     });
 
     return {
@@ -2234,6 +2322,9 @@ const app = createApp({
       sfRecords, sfFoods, sfTab, sfForm, sfSummary, sfReactionEmoji,
       SF_CATEGORIES, SF_TEXTURES, SF_AMOUNTS, SF_REACTIONS, SF_SYMPTOMS, SF_STATUS_META,
       openSolidScreen, openSolidForm, saveSolidFood, deleteSolidFood, sfToggleSymptom, sfCanSave,
+      // Solid food introduction schedule (輔食引入表)
+      sfSchedule, SFS_STATUS_META, SFS_CATEGORIES, sfsCatMeta, sfsEditing, sfsForm, sfsAddForm,
+      openSfSchedule, openSfsEditor, saveSfsProgress, openSfsAdd, saveSfsItem, deleteSfsItem,
       // Sleep
       sleepHistory, isSleeping, sleepSeconds, sleepStartISO,
       toggleSleep, saveManualSleep, deleteSleep,
@@ -2613,6 +2704,15 @@ const app = createApp({
       </div>
     </div>
 
+    <!-- entry: introduction schedule (引入表) -->
+    <div class="cs sfs-entry">
+      <div class="cl" @click="openSfSchedule()">
+        <div class="ri" style="background:#E8F5E9;color:var(--green)"><svg><use href="#i-food"/></svg></div>
+        <div class="cb"><div class="ct">可樂仔輔食引入表</div><div class="cd">新食材引入計劃 · 追蹤試食進度</div></div>
+        <div class="ca"><svg><use href="#i-arrow"/></svg></div>
+      </div>
+    </div>
+
     <!-- 記錄 tab -->
     <template v-if="sfTab === 'records'">
       <div class="dn"><span class="da" @click="prevDay"><svg><use href="#i-back"/></svg></span><span class="dt">{{ viewDateStr }}</span><span class="da" @click="nextDay"><svg><use href="#i-arrow"/></svg></span></div>
@@ -2658,6 +2758,66 @@ const app = createApp({
       </div>
       <div class="empty-state" v-else><svg><use href="#i-food"/></svg><p>暫無已試食物</p></div>
     </template>
+    <div style="height:24px"></div>
+  </div>
+
+  <!-- ===== SOLID FOOD INTRODUCTION SCHEDULE (輔食引入表) ===== -->
+  <div class="page" :class="{active: currentPage === 7}">
+    <div class="nb"><span class="nb-back" @click="go(5)"><svg><use href="#i-back"/></svg></span><span class="nb-t">可樂仔輔食引入表</span><span class="nb-a" @click="openSfsAdd()"><svg><use href="#i-plus"/></svg></span></div>
+    <div class="sfs-sub">一樣新食材試 3 日 · 蔬菜行先、水果行後</div>
+    <div class="cs sfs-card" v-if="sfSchedule.length">
+      <div class="cl sfs-row" v-for="it in sfSchedule" :key="it.id" @click="openSfsEditor(it)">
+        <div class="cb">
+          <div class="sfs-day">{{ it.day_label }}</div>
+          <div class="sfs-name">{{ it.food_name }}<span class="sfs-tag" :class="'sfs-tag-' + (it.category || 'other')">{{ sfsCatMeta(it.category).label }}</span></div>
+          <div class="sfs-note">留意：{{ it.watch_note || '—' }}</div>
+          <div class="sfs-prog" v-if="it.actual_start_date || it.notes"><template v-if="it.actual_start_date">實際開始 {{ it.actual_start_date }}</template><template v-if="it.notes">　{{ it.notes }}</template></div>
+        </div>
+        <div class="cr row">
+          <span class="sfs-pill" :class="(SFS_STATUS_META[it.status] || SFS_STATUS_META.pending).cls">{{ (SFS_STATUS_META[it.status] || SFS_STATUS_META.pending).label }}</span>
+          <span class="ca"><svg><use href="#i-arrow"/></svg></span>
+        </div>
+      </div>
+    </div>
+    <div class="empty-state" v-else><svg><use href="#i-food"/></svg><p>暫無引入食材，撳右上角＋新增</p></div>
+    <div class="nt ng"><div class="nb2">G6PD 安全：以上食材均不涉蠶豆或禁忌成分，可放心。新增食材前請先確認唔含蠶豆或禁忌成分。</div></div>
+    <div style="height:24px"></div>
+  </div>
+
+  <!-- ===== SUB: SCHEDULE PROGRESS EDITOR ===== -->
+  <div class="sub" :class="{active: activeSub === 'sfsE'}" @touchstart="subSwipeStart" @touchmove="subSwipeMove" @touchend="subSwipeEnd">
+    <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">{{ sfsEditing ? sfsEditing.food_name : '' }}</span><div class="nb-ph"></div></div>
+    <template v-if="sfsEditing">
+      <div class="st">試食進度</div>
+      <div class="seg">
+        <div class="seg-btn" v-for="(m, k) in SFS_STATUS_META" :key="k" :class="{active: sfsForm.status === k}" @click="sfsForm.status = k">{{ m.label }}</div>
+      </div>
+      <div class="fc" style="margin-top:16px">
+        <label class="fi"><span class="fl">實際開始日期</span><input class="fv" type="date" v-model="sfsForm.date"></label>
+        <label class="fi"><span class="fl">觀察記錄</span><input class="fv" type="text" v-model="sfsForm.notes" placeholder="例如：大便變粘稠、皮膚無異常"></label>
+      </div>
+      <div class="nt nc"><span class="nn" style="color:var(--blue)"><svg><use href="#i-info"/></svg></span><div class="nb2"><strong>留意事項</strong>{{ sfsEditing.watch_note || '同一新食材連續試 3 日，觀察有冇過敏反應。' }}</div></div>
+      <div class="ba"><a href="javascript:;" class="bp" :class="{disabled: saving}" @click="saveSfsProgress">儲存進度</a></div>
+      <div class="ba" style="padding-top:0"><a href="javascript:;" class="bp-outline ms-del" @click="deleteSfsItem">刪除此食材</a></div>
+      <div style="height:24px"></div>
+    </template>
+  </div>
+
+  <!-- ===== SUB: ADD SCHEDULE ITEM ===== -->
+  <div class="sub" :class="{active: activeSub === 'sfsA'}" @touchstart="subSwipeStart" @touchmove="subSwipeMove" @touchend="subSwipeEnd">
+    <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">新增引入食材</span><div class="nb-ph"></div></div>
+    <div class="st">食材資料</div>
+    <div class="fc">
+      <label class="fi"><span class="fl">食材名稱</span><input class="fv" type="text" v-model="sfsAddForm.name" placeholder="例如：翠玉瓜泥、蒸蛋黃"></label>
+      <label class="fi"><span class="fl">留意事項</span><input class="fv" type="text" v-model="sfsAddForm.note" placeholder="例如：留意皮膚同大便"></label>
+    </div>
+    <div class="st">分類</div>
+    <div class="seg">
+      <div class="seg-btn" v-for="c in SFS_CATEGORIES" :key="c.v" :class="{active: sfsAddForm.category === c.v}" @click="sfsAddForm.category = c.v">{{ c.label }}</div>
+    </div>
+    <div class="seg-hint">新食材會排喺引入表最尾，日子自動順延（每樣 3 日）。</div>
+    <div class="nt nw"><span class="nn" style="color:var(--red)"><svg><use href="#i-warn"/></svg></span><div class="nb2"><strong>蠶豆病提示</strong>可樂仔有蠶豆病：新食材要避免蠶豆及蠶豆製品。</div></div>
+    <div class="ba"><a href="javascript:;" class="bp" :class="{disabled: !sfsAddForm.name.trim() || saving}" @click="saveSfsItem">加入引入表</a></div>
     <div style="height:24px"></div>
   </div>
 

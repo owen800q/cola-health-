@@ -607,3 +607,24 @@ label.fi { cursor: pointer; }
 .ms-player { position: fixed; inset: 0; z-index: 9999; background: #000; display: flex; align-items: center; justify-content: center; }
 .ms-player-x { position: absolute; top: calc(12px + env(safe-area-inset-top)); right: 16px; width: 36px; height: 36px; border-radius: 50%; background: rgba(255,255,255,0.18); display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 2; }
 .ms-player-x svg { width: 22px; height: 22px; color: #fff; }
+
+/* ===== Solid food introduction schedule (輔食引入表) ===== */
+.sfs-entry { margin-top: 12px; }
+.sfs-sub { padding: 14px 16px 12px; font-size: 13px; color: var(--t3); text-align: center; }
+.sfs-card { margin: 0 16px 16px; border-radius: 12px; overflow: hidden; }
+.sfs-row { align-items: center; padding: 15px 16px; min-height: 44px; }
+.sfs-day { font-size: 13px; color: var(--t2); }
+.sfs-name { font-size: 16px; font-weight: 600; color: var(--t1); margin-top: 2px; display: flex; align-items: center; flex-wrap: wrap; }
+.sfs-tag { display: inline-block; margin-left: 8px; padding: 2px 8px; font-size: 12px; font-weight: 400; border-radius: 4px; white-space: nowrap; }
+.sfs-tag-veg { background: #E8F5E9; color: var(--green); }
+.sfs-tag-fruit { background: #FDF0E1; color: #FA9D3B; }
+.sfs-tag-other { background: #F0F0F0; color: var(--t2); }
+.sfs-note { font-size: 14px; color: var(--t2); margin-top: 3px; line-height: 1.5; }
+.sfs-prog { font-size: 13px; color: var(--t3); margin-top: 3px; }
+.sfs-pill { display: inline-block; padding: 4px 12px; font-size: 13px; border-radius: 14px; white-space: nowrap; }
+.sfs-pl-grey { background: #F0F0F0; color: var(--t2); }
+.sfs-pl-blue { background: #E8F4FD; color: var(--blue); }
+.sfs-pl-green { background: #E8F5E9; color: var(--green); }
+.sfs-pl-red { background: #FFF0EF; color: var(--red); }
+.nt.ng { background: #E8F5E9; border: 1px solid rgba(9,187,7,0.15); }
+.nt.ng .nb2 { color: #1D7A1C; }

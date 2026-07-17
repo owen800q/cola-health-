@@ -55,6 +55,10 @@
       return request('/solidfoods?' + q);
     },
     getSolidFoodList: () => request('/solidfoods/foods'),
+    getSolidSchedule: () => request('/solidfoods/schedule'),
+    createSolidScheduleItem: (data) => request('/solidfoods/schedule', { method: 'POST', body: data }),
+    deleteSolidScheduleItem: (id) => request('/solidfoods/schedule/' + id, { method: 'DELETE' }),
+    saveSolidScheduleProgress: (id, data) => request('/solidfoods/schedule/' + id + '/progress', { method: 'PUT', body: data }),
     createSolidFood: (data) => request('/solidfoods', { method: 'POST', body: data }),
     updateSolidFood: (id, data) => request('/solidfoods/' + id, { method: 'PUT', body: data }),
     deleteSolidFood: (id) => request('/solidfoods/' + id, { method: 'DELETE' }),
