@@ -108,7 +108,8 @@ body::after { content: ''; position: fixed; bottom: 0; left: 0; right: 0; height
 .dn { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 10px 16px; background: var(--card); border-bottom: 1px solid var(--t5); }
 .dn .da { color: var(--t3); cursor: pointer; padding: 8px; display: flex; align-items: center; }
 .dn .da svg { width: 16px; height: 16px; }
-.dn .dt { font-size: 15px; font-weight: 600; min-width: 110px; text-align: center; }
+.dn .dt { font-size: 15px; font-weight: 600; min-width: 110px; text-align: center; cursor: pointer; }
+.dn .dt:active { opacity: 0.6; }
 
 /* Summary */
 .sb { display: flex; margin: 16px; background: var(--card); border-radius: 8px; padding: 10px; }

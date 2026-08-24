@@ -1846,6 +1846,29 @@ const app = createApp({
       else if (p === 5) loadSolidFoods();
     }
 
+    // Date picker (tap the date label to jump to any date)
+    const datePickerShow = ref(false);
+    const datePickerMin = computed(() => {
+      const bd = store.baby && store.baby.birth_date ? new Date(store.baby.birth_date) : null;
+      if (bd && !isNaN(bd.getTime()) && bd.getTime() < Date.now()) { bd.setHours(0, 0, 0, 0); return bd; }
+      const d = new Date(); d.setFullYear(d.getFullYear() - 2); d.setHours(0, 0, 0, 0); return d;
+    });
+    const datePickerMax = computed(() => {
+      const d = new Date(); d.setHours(23, 59, 59, 999); return d;
+    });
+    const datePickerDefault = computed(() => {
+      const v = new Date(viewDate.value);
+      if (v.getTime() < datePickerMin.value.getTime()) return new Date(datePickerMin.value);
+      if (v.getTime() > datePickerMax.value.getTime()) return new Date(datePickerMax.value);
+      return v;
+    });
+    function openDatePicker() { datePickerShow.value = true; }
+    function onDatePicked(date) {
+      datePickerShow.value = false;
+      viewDate.value = new Date(date);
+      reloadViewPage();
+    }
+
     // Feed summary computed
     const feedSummary = computed(() => {
       const items = feedHistory.value;
@@ -2221,6 +2244,7 @@ const app = createApp({
       baby, babyName, babyAge, babyBirthday, daysSinceBirth, avatarUrl, pickAvatar,
       // Home
       homeStats, recentItems, nextFeedStr, nextFeedMs, nextFeedProgress, nextFeedOverdue, lastFeedAgo, viewDateStr, prevDay, nextDay,
+      datePickerShow, datePickerMin, datePickerMax, datePickerDefault, openDatePicker, onDatePicked,
       // Edit
       editingId, editingType, editFeed, editDiaper, editSleep, editTemp, editTimelineItem, saving,
       // Feed
@@ -2362,7 +2386,7 @@ const app = createApp({
   <!-- ===== FEEDING ===== -->
   <div class="page" :class="{active: currentPage === 1}">
     <div class="nb"><div class="nb-ph"></div><span class="nb-t">飲奶記錄</span><span class="nb-a" @click="openSub('af'); initTimes()"><svg><use href="#i-plus"/></svg></span></div>
-    <div class="dn"><span class="da" @click="prevDay"><svg><use href="#i-back"/></svg></span><span class="dt">{{ viewDateStr }}</span><span class="da" @click="nextDay"><svg><use href="#i-arrow"/></svg></span></div>
+    <div class="dn"><span class="da" @click="prevDay"><svg><use href="#i-back"/></svg></span><span class="dt" @click="openDatePicker">{{ viewDateStr }}</span><span class="da" @click="nextDay"><svg><use href="#i-arrow"/></svg></span></div>
     <div class="sb">
       <div class="sbi"><span class="sbv" style="color:var(--blue)">{{ feedSummary.total }}</span><span class="sbl">總奶量(ml)</span></div>
       <div class="sbi"><span class="sbv" style="color:var(--green)">{{ feedSummary.count }}</span><span class="sbl">餵奶次數</span></div>
@@ -2389,7 +2413,7 @@ const app = createApp({
   <!-- ===== DIAPER ===== -->
   <div class="page" :class="{active: currentPage === 2}">
     <div class="nb"><div class="nb-ph"></div><span class="nb-t">換片記錄</span><span class="nb-a" @click="openSub('ad'); initTimes()"><svg><use href="#i-plus"/></svg></span></div>
-    <div class="dn"><span class="da" @click="prevDay"><svg><use href="#i-back"/></svg></span><span class="dt">{{ viewDateStr }}</span><span class="da" @click="nextDay"><svg><use href="#i-arrow"/></svg></span></div>
+    <div class="dn"><span class="da" @click="prevDay"><svg><use href="#i-back"/></svg></span><span class="dt" @click="openDatePicker">{{ viewDateStr }}</span><span class="da" @click="nextDay"><svg><use href="#i-arrow"/></svg></span></div>
     <div class="sb">
       <div class="sbi"><span class="sbv" style="color:var(--orange)">{{ diaperSummary.wet }}</span><span class="sbl">小便</span></div>
       <div class="sbi"><span class="sbv" style="color:#E67E22">{{ diaperSummary.dirty }}</span><span class="sbl">大便</span></div>
@@ -2427,7 +2451,7 @@ const app = createApp({
         <span>{{ isSleeping ? '醒咗' : '瞓覺' }}</span>
       </button>
     </div>
-    <div class="dn"><span class="da" @click="prevDay"><svg><use href="#i-back"/></svg></span><span class="dt">{{ viewDateStr }}</span><span class="da" @click="nextDay"><svg><use href="#i-arrow"/></svg></span></div>
+    <div class="dn"><span class="da" @click="prevDay"><svg><use href="#i-back"/></svg></span><span class="dt" @click="openDatePicker">{{ viewDateStr }}</span><span class="da" @click="nextDay"><svg><use href="#i-arrow"/></svg></span></div>
     <div class="sb">
       <div class="sbi"><span class="sbv" style="color:var(--purple)">{{ sleepSummaryData.totalHours }}h</span><span class="sbl">今日總睡眠</span></div>
       <div class="sbi"><span class="sbv" style="color:var(--purple)">{{ sleepSummaryData.longestHours }}h</span><span class="sbl">最長連續</span></div>
@@ -2615,7 +2639,7 @@ const app = createApp({
 
     <!-- 記錄 tab -->
     <template v-if="sfTab === 'records'">
-      <div class="dn"><span class="da" @click="prevDay"><svg><use href="#i-back"/></svg></span><span class="dt">{{ viewDateStr }}</span><span class="da" @click="nextDay"><svg><use href="#i-arrow"/></svg></span></div>
+      <div class="dn"><span class="da" @click="prevDay"><svg><use href="#i-back"/></svg></span><span class="dt" @click="openDatePicker">{{ viewDateStr }}</span><span class="da" @click="nextDay"><svg><use href="#i-arrow"/></svg></span></div>
       <div class="sb">
         <div class="sbi"><span class="sbv" style="color:var(--orange)">{{ sfSummary.count }}</span><span class="sbl">輔食次數</span></div>
         <div class="sbi"><span class="sbv" style="color:var(--green)">{{ sfSummary.newCount }}</span><span class="sbl">新食物種類</span></div>
@@ -3228,6 +3252,9 @@ const app = createApp({
     <span class="ms-player-x" @click="msVideoPlay = null"><svg><use href="#i-close"/></svg></span>
     <video :src="msVideoPlay" controls autoplay playsinline style="max-width:100%;max-height:100%"></video>
   </div>
+
+  <!-- ===== DATE PICKER CALENDAR ===== -->
+  <van-calendar v-model:show="datePickerShow" title="選擇日期" :show-confirm="false" switch-mode="year-month" :min-date="datePickerMin" :max-date="datePickerMax" :default-date="datePickerDefault" @confirm="onDatePicked" teleport="body" />
 
   <!-- ===== TAB BAR ===== -->
   <div class="tb">
