@@ -54,6 +54,8 @@ CREATE TABLE IF NOT EXISTS vaccines (
   dose TEXT,
   scheduled_date TEXT,
   actual_date TEXT,
+  booking_date TEXT,
+  booking_time TEXT,
   status TEXT CHECK(status IN ('done','pending','overdue')) DEFAULT 'pending',
   location TEXT,
   batch_number TEXT,

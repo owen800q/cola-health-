@@ -296,14 +296,25 @@ const app = createApp({
       return d.getFullYear() + '年' + (d.getMonth() + 1) + '月' + d.getDate() + '日';
     }
 
+    function fmtBookingDate(dateStr) {
+      const [y, m, d] = String(dateStr).split('-').map(Number);
+      return y + '年' + m + '月' + d + '日';
+    }
+
+    function hasVaccineBooking(v) {
+      return v.status !== 'done' && !!v.booking_date;
+    }
+
     function vaccineStatusCls(v) {
       if (v.status === 'done') return 'tg-g';
+      if (hasVaccineBooking(v)) return 'tg-b';
       if (v.status === 'overdue') return 'tg-r';
       return 'tg-o';
     }
 
     function vaccineStatusText(v) {
       if (v.status === 'done') return '已完成';
+      if (hasVaccineBooking(v)) return '已預約';
       if (v.status === 'overdue') return '已過期';
       return '待接種';
     }
@@ -322,6 +333,7 @@ const app = createApp({
 
     function vaccineDesc(v) {
       if (v.status === 'done') return '已接種 · ' + fmtVaccineDate(v) + (v.location ? ' · ' + v.location : '');
+      if (hasVaccineBooking(v)) return '已預約：' + fmtBookingDate(v.booking_date) + (v.booking_time ? ' ' + v.booking_time : '') + ' · 建議：' + fmtVaccineDate(v);
       return '建議：' + fmtVaccineDate(v);
     }
 
@@ -335,13 +347,38 @@ const app = createApp({
     const editVaccine = ref(null);
     const vaccineEditDate = ref('');
     const vaccineEditLocation = ref('');
+    const vaccineEditBooking = ref('');
+    const vaccineEditBookingTime = ref('');
 
     function openVaccineEdit(v) {
       editVaccine.value = v;
       const today = new Date();
       vaccineEditDate.value = v.actual_date || today.getFullYear() + '-' + pad(today.getMonth()+1) + '-' + pad(today.getDate());
       vaccineEditLocation.value = v.location || '';
+      vaccineEditBooking.value = v.booking_date || '';
+      vaccineEditBookingTime.value = v.booking_time || '';
       openSub('ve');
+    }
+
+    // Save 預約日期 only (status untouched). The Worker cron pushes a reminder the day before.
+    async function saveVaccineBooking() {
+      if (!editVaccine.value || saving.value) return;
+      const booking = vaccineEditBooking.value || '';
+      saving.value = true;
+      showLoading('儲存中...');
+      try {
+        await API.markVaccine(editVaccine.value.id, {
+          booking_date: booking,
+          booking_time: booking ? (vaccineEditBookingTime.value || '') : '',
+          location: vaccineEditLocation.value || null,
+        });
+        hideLoading();
+        showToast(booking ? '已儲存預約日期，前一日會推送提醒' : '已清除預約日期');
+        editVaccine.value = null;
+        closeSub();
+        loadVaccines();
+      } catch (e) { hideLoading(); showToast('儲存失敗'); }
+      finally { saving.value = false; }
     }
 
     async function saveVaccineEdit() {
@@ -2298,7 +2335,7 @@ const app = createApp({
       isFever, loadTempHistory,
       // Vaccines
       vaccines, vaccineGroups, vaccineDesc, vaccineName, vaccineStatusCls, vaccineStatusText, vaccineIcon, vaccineIconColor,
-      editVaccine, vaccineEditDate, vaccineEditLocation, openVaccineEdit, saveVaccineEdit,
+      editVaccine, vaccineEditDate, vaccineEditLocation, vaccineEditBooking, vaccineEditBookingTime, openVaccineEdit, saveVaccineEdit, saveVaccineBooking,
       // Growth curve
       growthRecords, growthRef, growthMetric, growthForm, growthEditingId,
       growthSeries, growthYRange, growthChartPoints, growthChartLine, growthXTicks, growthYTicks,
@@ -2915,6 +2952,15 @@ const app = createApp({
     <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">編輯疫苗記錄</span><div class="nb-ph"></div></div>
     <div v-if="editVaccine">
       <div class="nt nc"><span class="nn" style="color:var(--green)"><svg><use href="#i-shield"/></svg></span><div class="nb2"><strong>{{ editVaccine.name }}</strong><span v-if="editVaccine.dose"> — {{ editVaccine.dose }}</span></div></div>
+      <template v-if="editVaccine.status !== 'done'">
+        <div class="st">預約資料</div>
+        <div class="fc">
+          <label class="fi"><span class="fl">預約日期</span><input class="fv" type="date" v-model="vaccineEditBooking"></label>
+          <label class="fi"><span class="fl">預約時間</span><input class="fv" type="time" v-model="vaccineEditBookingTime" :disabled="!vaccineEditBooking"></label>
+        </div>
+        <div class="nt nc" style="margin-top:8px"><span class="nn" style="color:var(--blue)"><svg><use href="#i-bell"/></svg></span><div class="nb2">設定預約日期後，預約日前一天（上午 9 時）會推送提醒通知。清空日期並儲存可取消提醒。</div></div>
+        <div class="ba" style="padding-top:0"><a href="javascript:;" class="bp-outline" :class="{disabled: saving}" @click="saveVaccineBooking">儲存預約日期</a></div>
+      </template>
       <div class="st">接種資料</div>
       <div class="fc">
         <label class="fi"><span class="fl">接種日期</span><input class="fv" type="date" v-model="vaccineEditDate"></label>
@@ -3127,7 +3173,7 @@ const app = createApp({
     <div class="st">疫苗提醒</div>
     <div class="rm-card">
       <div class="rm-ico" style="background:#E8F5E9;color:var(--green)"><svg><use href="#i-shield"/></svg></div>
-      <div class="rm-body"><div class="rm-title">疫苗到期提醒</div><div class="rm-desc">接種日前 7 天推送提醒</div></div>
+      <div class="rm-body"><div class="rm-title">疫苗到期提醒</div><div class="rm-desc">接種日前 7 天推送提醒；已設定預約日期的疫苗，預約日前一天另會推送提醒</div></div>
       <label class="tog"><input type="checkbox" v-model="reminders.vaccine.enabled" @change="toggleReminder('vaccine')"><span class="tsl"></span></label>
     </div>
     <div class="st">睡眠提醒</div>
