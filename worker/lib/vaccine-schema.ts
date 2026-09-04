@@ -9,10 +9,15 @@ let ensured = false;
 export async function ensureVaccineSchema(db: D1Database): Promise<void> {
   if (ensured) return;
   const { results } = await db.prepare('PRAGMA table_info(vaccines)').all();
-  const hasBooking = (results || []).some((col) => col.name === 'booking_date');
-  if (!hasBooking) {
+  const existing = new Set((results || []).map((col) => col.name as string));
+  const wanted: Array<[string, string]> = [
+    ['booking_date', 'TEXT'],
+    ['booking_time', 'TEXT'],
+  ];
+  for (const [name, type] of wanted) {
+    if (existing.has(name)) continue;
     try {
-      await db.prepare('ALTER TABLE vaccines ADD COLUMN booking_date TEXT').run();
+      await db.prepare(`ALTER TABLE vaccines ADD COLUMN ${name} ${type}`).run();
     } catch (e: any) {
       // Another isolate may have added it concurrently.
       if (!/duplicate column/i.test(String(e?.message || e))) throw e;

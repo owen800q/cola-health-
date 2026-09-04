@@ -182,7 +182,7 @@ async function checkVaccineBookingReminders(
   await ensureVaccineSchema(db);
 
   const { results: bookings } = await db.prepare(`
-    SELECT id, name, dose, booking_date, location FROM vaccines
+    SELECT id, name, dose, booking_date, booking_time, location FROM vaccines
     WHERE status != 'done' AND booking_date = ?
     ORDER BY id ASC
   `).bind(tomorrowStr).all();
@@ -198,7 +198,8 @@ async function checkVaccineBookingReminders(
 
     const label = `${v.name}${v.dose ? '（' + v.dose + '）' : ''}`;
     const where = v.location ? `，地點：${v.location}` : '';
-    const message = `${label} 已預約於明天 ${fmtDateZh(v.booking_date as string)} 接種${where}，請記得準時前往！`;
+    const when = v.booking_time ? ` ${v.booking_time}` : '';
+    const message = `${label} 已預約於明天 ${fmtDateZh(v.booking_date as string)}${when} 接種${where}，請記得準時前往！`;
 
     await broadcast(db, subs, vapid, {
       title: '疫苗預約提醒',

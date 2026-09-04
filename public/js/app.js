@@ -307,7 +307,7 @@ const app = createApp({
 
     function vaccineDesc(v) {
       if (v.status === 'done') return '已接種 · ' + fmtVaccineDate(v) + (v.location ? ' · ' + v.location : '');
-      if (hasVaccineBooking(v)) return '已預約：' + fmtBookingDate(v.booking_date) + ' · 建議：' + fmtVaccineDate(v);
+      if (hasVaccineBooking(v)) return '已預約：' + fmtBookingDate(v.booking_date) + (v.booking_time ? ' ' + v.booking_time : '') + ' · 建議：' + fmtVaccineDate(v);
       return '建議：' + fmtVaccineDate(v);
     }
 
@@ -322,6 +322,7 @@ const app = createApp({
     const vaccineEditDate = ref('');
     const vaccineEditLocation = ref('');
     const vaccineEditBooking = ref('');
+    const vaccineEditBookingTime = ref('');
 
     function openVaccineEdit(v) {
       editVaccine.value = v;
@@ -329,6 +330,7 @@ const app = createApp({
       vaccineEditDate.value = v.actual_date || today.getFullYear() + '-' + pad(today.getMonth()+1) + '-' + pad(today.getDate());
       vaccineEditLocation.value = v.location || '';
       vaccineEditBooking.value = v.booking_date || '';
+      vaccineEditBookingTime.value = v.booking_time || '';
       openSub('ve');
     }
 
@@ -341,6 +343,7 @@ const app = createApp({
       try {
         await API.markVaccine(editVaccine.value.id, {
           booking_date: booking,
+          booking_time: booking ? (vaccineEditBookingTime.value || '') : '',
           location: vaccineEditLocation.value || null,
         });
         hideLoading();
@@ -2304,7 +2307,7 @@ const app = createApp({
       isFever, loadTempHistory,
       // Vaccines
       vaccines, vaccineGroups, vaccineDesc, vaccineName, vaccineStatusCls, vaccineStatusText, vaccineIcon, vaccineIconColor,
-      editVaccine, vaccineEditDate, vaccineEditLocation, vaccineEditBooking, openVaccineEdit, saveVaccineEdit, saveVaccineBooking,
+      editVaccine, vaccineEditDate, vaccineEditLocation, vaccineEditBooking, vaccineEditBookingTime, openVaccineEdit, saveVaccineEdit, saveVaccineBooking,
       // Growth curve
       growthRecords, growthRef, growthMetric, growthForm, growthEditingId,
       growthSeries, growthYRange, growthChartPoints, growthChartLine, growthXTicks, growthYTicks,
@@ -2920,6 +2923,7 @@ const app = createApp({
         <div class="st">預約資料</div>
         <div class="fc">
           <label class="fi"><span class="fl">預約日期</span><input class="fv" type="date" v-model="vaccineEditBooking"></label>
+          <label class="fi"><span class="fl">預約時間</span><input class="fv" type="time" v-model="vaccineEditBookingTime" :disabled="!vaccineEditBooking"></label>
         </div>
         <div class="nt nc" style="margin-top:8px"><span class="nn" style="color:var(--blue)"><svg><use href="#i-bell"/></svg></span><div class="nb2">設定預約日期後，預約日前一天（上午 9 時）會推送提醒通知。清空日期並儲存可取消提醒。</div></div>
         <div class="ba" style="padding-top:0"><a href="javascript:;" class="bp-outline" :class="{disabled: saving}" @click="saveVaccineBooking">儲存預約日期</a></div>

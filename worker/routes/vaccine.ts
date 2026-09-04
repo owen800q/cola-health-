@@ -60,7 +60,16 @@ vaccineRoutes.put('/:id', async (c) => {
     if (body.booking_date && !bookingDate) {
       return c.json({ error: 'booking_date 格式須為 YYYY-MM-DD' }, 400);
     }
-    await db.prepare('UPDATE vaccines SET booking_date = ? WHERE id = ?').bind(bookingDate, id).run();
+    // 預約時間 (booking_time, HH:MM) — optional, cleared together with the date.
+    let bookingTime: string | null = null;
+    if (bookingDate && typeof body.booking_time === 'string' && body.booking_time) {
+      if (!/^\d{2}:\d{2}$/.test(body.booking_time)) {
+        return c.json({ error: 'booking_time 格式須為 HH:MM' }, 400);
+      }
+      bookingTime = body.booking_time;
+    }
+    await db.prepare('UPDATE vaccines SET booking_date = ?, booking_time = ? WHERE id = ?')
+      .bind(bookingDate, bookingTime, id).run();
   }
 
   const vaccine = await db.prepare('SELECT * FROM vaccines WHERE id = ?').bind(id).first();
