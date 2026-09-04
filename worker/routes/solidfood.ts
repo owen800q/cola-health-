@@ -93,14 +93,16 @@ solidFoodRoutes.get('/foods', async (c) => {
   for (const r of (rows.results || []) as any[]) {
     let f = map.get(r.name);
     if (!f) {
-      f = { name: r.name, category: r.category, sinceISO: r.time, abnormal: false, firstTry: false, reaction: '' };
+      f = { name: r.name, category: r.category, sinceISO: r.time, abnormal: false, firstTry: false, reaction: '', symptoms: [] as string[] };
       map.set(r.name, f);
     }
     if (r.first_try) f.firstTry = true;
     if (r.abnormal) {
       f.abnormal = true;
-      const syms = r.symptoms ? JSON.parse(r.symptoms) : [];
+      let syms: string[] = [];
+      try { syms = r.symptoms ? JSON.parse(r.symptoms) : []; } catch { syms = []; }
       if (syms.length && !f.reaction) f.reaction = syms[0];
+      for (const s of syms) if (s && !f.symptoms.includes(s)) f.symptoms.push(s);
     }
   }
 
@@ -112,7 +114,7 @@ solidFoodRoutes.get('/foods', async (c) => {
     // alert if it ever caused a reaction; watch while a newly-introduced food is in its
     // 3-day observation window; otherwise it's an established (safe) food.
     const status = f.abnormal ? 'alert' : (f.firstTry && diff <= 2 ? 'watch' : 'safe');
-    return { name: f.name, category: f.category, since: monthDay(f.sinceISO), status, day: diff + 1, reaction: f.reaction };
+    return { name: f.name, category: f.category, since: monthDay(f.sinceISO), status, day: diff + 1, reaction: f.reaction, symptoms: f.symptoms };
   });
   return c.json(list);
 });
