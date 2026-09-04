@@ -2,6 +2,19 @@
 import type { Bindings } from './index';
 import { sendPush, type PushSub, type VapidKeys } from './lib/webpush';
 import { scrapeAndSync, shouldSync } from './lib/scraper';
+import { ensureVaccineSchema } from './lib/vaccine-schema';
+
+interface PushPayload {
+  title: string;
+  body: string;
+  tag: string;
+  data: Record<string, unknown>;
+}
+
+// Hong Kong time (UTC+8) — booking reminders are date-based, so they must use local dates.
+const HK_OFFSET_MS = 8 * 60 * 60 * 1000;
+// Earliest local hour at which a "tomorrow's booking" reminder may be sent.
+const BOOKING_REMINDER_HOUR = 9;
 
 export async function handleScheduled(env: Bindings): Promise<void> {
   const db = env.DB;
@@ -18,23 +31,37 @@ export async function handleScheduled(env: Bindings): Promise<void> {
   // Ensure notification_log table exists (dedup tracking)
   await db.prepare('CREATE TABLE IF NOT EXISTS notification_log (reminder_type TEXT PRIMARY KEY, last_notified_at TEXT NOT NULL)').run();
 
-  // Get enabled reminders
-  const { results: reminders } = await db.prepare(
-    'SELECT * FROM reminders WHERE enabled = 1'
-  ).all();
-  if (!reminders?.length) return;
-
   // Get all push subscriptions
-  const { results: subs } = await db.prepare(
+  const { results: subRows } = await db.prepare(
     'SELECT * FROM push_subscriptions'
   ).all();
-  if (!subs?.length) return;
+  if (!subRows?.length) return;
+
+  const subs: PushSub[] = subRows.map((sub) => ({
+    endpoint: sub.endpoint as string,
+    p256dh: sub.p256dh as string,
+    auth: sub.auth as string,
+  }));
 
   const vapid: VapidKeys = {
     publicKey: env.VAPID_PUBLIC_KEY,
     privateKey: env.VAPID_PRIVATE_KEY,
     subject: env.VAPID_SUBJECT,
   };
+
+  // Vaccine booking reminders (預約日前一天) — independent of the reminder toggles,
+  // since a booking date is set explicitly by the user for that vaccine.
+  try {
+    await checkVaccineBookingReminders(db, subs, vapid);
+  } catch (e) {
+    console.error('Vaccine booking reminder error:', e);
+  }
+
+  // Get enabled reminders
+  const { results: reminders } = await db.prepare(
+    'SELECT * FROM reminders WHERE enabled = 1'
+  ).all();
+  if (!reminders?.length) return;
 
   const now = Date.now();
 
@@ -84,41 +111,104 @@ export async function handleScheduled(env: Bindings): Promise<void> {
       awake_time: '清醒時間提醒',
     };
 
-    const staleEndpoints: string[] = [];
+    await broadcast(db, subs, vapid, {
+      title: titles[type] || '可樂仔健康記錄',
+      body: message,
+      tag: type,
+      data: { type, url: '/' },
+    });
 
-    for (const sub of subs) {
-      const pushSub: PushSub = {
-        endpoint: sub.endpoint as string,
-        p256dh: sub.p256dh as string,
-        auth: sub.auth as string,
-      };
-      try {
-        const result = await sendPush(pushSub, {
-          title: titles[type] || '可樂仔健康記錄',
-          body: message,
-          tag: type,
-          data: { type, url: '/' },
-        }, vapid);
+    await markNotified(db, type);
+  }
+}
 
-        if (result.status === 410 || result.status === 404) {
-          staleEndpoints.push(pushSub.endpoint);
-        }
-      } catch (e) {
-        console.error(`Push failed for ${type}:`, e);
+/* ── Push helpers ── */
+
+// Send one payload to every subscriber, pruning subscriptions the push service reports as gone.
+async function broadcast(
+  db: D1Database, subs: PushSub[], vapid: VapidKeys, payload: PushPayload
+): Promise<void> {
+  const staleEndpoints: string[] = [];
+
+  for (const sub of subs) {
+    try {
+      const result = await sendPush(sub, payload, vapid);
+      if (result.status === 410 || result.status === 404) {
+        staleEndpoints.push(sub.endpoint);
       }
+    } catch (e) {
+      console.error(`Push failed for ${payload.tag}:`, e);
     }
+  }
 
-    // Clean up expired subscriptions
-    for (const ep of staleEndpoints) {
-      await db.prepare('DELETE FROM push_subscriptions WHERE endpoint = ?').bind(ep).run();
-    }
+  // Clean up expired subscriptions
+  for (const ep of staleEndpoints) {
+    await db.prepare('DELETE FROM push_subscriptions WHERE endpoint = ?').bind(ep).run();
+    const idx = subs.findIndex((s) => s.endpoint === ep);
+    if (idx >= 0) subs.splice(idx, 1);
+  }
+}
 
-    // Update dedup log
-    await db.prepare(`
-      INSERT INTO notification_log (reminder_type, last_notified_at)
-      VALUES (?, datetime('now'))
-      ON CONFLICT(reminder_type) DO UPDATE SET last_notified_at = datetime('now')
-    `).bind(type).run();
+async function markNotified(db: D1Database, key: string): Promise<void> {
+  await db.prepare(`
+    INSERT INTO notification_log (reminder_type, last_notified_at)
+    VALUES (?, datetime('now'))
+    ON CONFLICT(reminder_type) DO UPDATE SET last_notified_at = datetime('now')
+  `).bind(key).run();
+}
+
+/* ── Vaccine booking reminders (預約日前一天推送) ── */
+
+function toDateStr(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+function fmtDateZh(dateStr: string): string {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return `${y}年${m}月${d}日`;
+}
+
+async function checkVaccineBookingReminders(
+  db: D1Database, subs: PushSub[], vapid: VapidKeys
+): Promise<void> {
+  // Work in Hong Kong local time so "tomorrow" matches the date the user entered.
+  const hkNow = new Date(Date.now() + HK_OFFSET_MS);
+  if (hkNow.getUTCHours() < BOOKING_REMINDER_HOUR) return;
+
+  const tomorrow = new Date(hkNow);
+  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+  const tomorrowStr = toDateStr(tomorrow);
+
+  await ensureVaccineSchema(db);
+
+  const { results: bookings } = await db.prepare(`
+    SELECT id, name, dose, booking_date, location FROM vaccines
+    WHERE status != 'done' AND booking_date = ?
+    ORDER BY id ASC
+  `).bind(tomorrowStr).all();
+  if (!bookings?.length) return;
+
+  for (const v of bookings) {
+    // One notification per vaccine per booking date; re-booking to a new date re-arms it.
+    const key = `vaccine_booking:${v.id}:${v.booking_date}`;
+    const log = await db.prepare(
+      'SELECT last_notified_at FROM notification_log WHERE reminder_type = ?'
+    ).bind(key).first();
+    if (log) continue;
+
+    const label = `${v.name}${v.dose ? '（' + v.dose + '）' : ''}`;
+    const where = v.location ? `，地點：${v.location}` : '';
+    const message = `${label} 已預約於明天 ${fmtDateZh(v.booking_date as string)} 接種${where}，請記得準時前往！`;
+
+    await broadcast(db, subs, vapid, {
+      title: '疫苗預約提醒',
+      body: message,
+      tag: 'vaccine_booking',
+      data: { type: 'vaccine_booking', vaccineId: v.id, url: '/' },
+    });
+
+    await markNotified(db, key);
+    if (!subs.length) return;
   }
 }
 

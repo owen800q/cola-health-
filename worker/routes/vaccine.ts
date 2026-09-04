@@ -1,7 +1,13 @@
 import { Hono } from 'hono';
 import type { Bindings } from '../index';
+import { ensureVaccineSchema } from '../lib/vaccine-schema';
 
 export const vaccineRoutes = new Hono<{ Bindings: Bindings }>();
+
+vaccineRoutes.use('*', async (c, next) => {
+  await ensureVaccineSchema(c.env.DB);
+  await next();
+});
 
 // GET /api/vaccines
 vaccineRoutes.get('/', async (c) => {
@@ -23,7 +29,8 @@ vaccineRoutes.get('/', async (c) => {
 vaccineRoutes.put('/:id', async (c) => {
   const db = c.env.DB;
   const id = c.req.param('id');
-  const { actual_date, status, location, batch_number, side_effects, note } = await c.req.json();
+  const body = await c.req.json();
+  const { actual_date, status, location, batch_number, side_effects, note } = body;
 
   await db.prepare(`
     UPDATE vaccines SET
@@ -43,6 +50,18 @@ vaccineRoutes.put('/:id', async (c) => {
     note || null,
     id
   ).run();
+
+  // 預約日期 (booking_date): only touched when the key is present in the body,
+  // so an empty string / null explicitly clears an existing booking.
+  if ('booking_date' in body) {
+    const bookingDate = typeof body.booking_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.booking_date)
+      ? body.booking_date
+      : null;
+    if (body.booking_date && !bookingDate) {
+      return c.json({ error: 'booking_date 格式須為 YYYY-MM-DD' }, 400);
+    }
+    await db.prepare('UPDATE vaccines SET booking_date = ? WHERE id = ?').bind(bookingDate, id).run();
+  }
 
   const vaccine = await db.prepare('SELECT * FROM vaccines WHERE id = ?').bind(id).first();
   return c.json(vaccine);
