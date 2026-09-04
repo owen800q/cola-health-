@@ -496,6 +496,20 @@ label.fi { cursor: pointer; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 16px 0; }
 .chip { font-size: 13px; padding: 7px 14px; border-radius: 16px; background: var(--card); color: var(--t2); border: 1px solid var(--t4); cursor: pointer; user-select: none; }
 .chip.on { background: #FFEDED; color: var(--red); border-color: rgba(244,53,48,0.35); font-weight: 600; }
+/* 食物清單 shortcut filter chips (全部 / 過敏 / 觀察中 / 安全) */
+.sf-filter { padding: 12px 16px 0; }
+.sf-filter .chip { display: inline-flex; align-items: center; gap: 5px; padding: 6px 12px; }
+.sf-filter .chip .chip-n { font-size: 11px; line-height: 16px; min-width: 16px; padding: 0 5px; border-radius: 8px; text-align: center; background: rgba(0,0,0,0.06); color: var(--t3); }
+.chip.on .chip-n { background: rgba(244,53,48,0.15); color: var(--red); }
+.chip.on-o { background: #FFF4E0; color: #a05a00; border-color: rgba(245,166,35,0.45); font-weight: 600; }
+.chip.on-o .chip-n { background: rgba(245,166,35,0.2); color: #a05a00; }
+.chip.on-g { background: #EAF8EA; color: #0a7a08; border-color: rgba(9,187,7,0.35); font-weight: 600; }
+.chip.on-g .chip-n { background: rgba(9,187,7,0.15); color: #0a7a08; }
+.chip.on-n { background: var(--t1); color: var(--card); border-color: var(--t1); font-weight: 600; }
+.chip.on-n .chip-n { background: rgba(255,255,255,0.25); color: var(--card); }
+/* allergy row icon tint + note above the filtered 過敏 list */
+.ri.food.alert { background: #FFEDED; color: var(--red); }
+.nt.nc.food-alert-note { border-color: rgba(244,53,48,0.3); background: #FFF5F5; }
 /* food-log row: status block on the right */
 .food-status { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
 .food-status .fs-sub { font-size: 11px; color: var(--t3); }

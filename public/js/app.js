@@ -212,6 +212,32 @@ const app = createApp({
     };
     const sfForm = reactive({ time: '', category: '蔬菜', name: '', texture: '泥蓉', first: false, amount: '食一半', reaction: '一般', abnormal: false, symptoms: [], note: '' });
     const sfReactionEmoji = (v) => (SF_REACTIONS.find(r => r.v === v) || {}).em || '';
+    // 食物清單 shortcut filter: 'all' | 'alert' (過敏) | 'watch' | 'safe'
+    const sfFoodFilter = ref('all');
+    const SF_FOOD_FILTERS = [
+      { v: 'all', label: '全部', cls: 'on-n' },
+      { v: 'alert', label: '過敏', cls: 'on' },
+      { v: 'watch', label: '觀察中', cls: 'on-o' },
+      { v: 'safe', label: '安全', cls: 'on-g' },
+    ];
+    const sfFoodCounts = computed(() => {
+      const c = { all: sfFoods.value.length, alert: 0, watch: 0, safe: 0 };
+      for (const f of sfFoods.value) if (c[f.status] != null) c[f.status]++;
+      return c;
+    });
+    const sfFoodsFiltered = computed(() =>
+      sfFoodFilter.value === 'all' ? sfFoods.value : sfFoods.value.filter(f => f.status === sfFoodFilter.value)
+    );
+    const sfFoodListTitle = computed(() => {
+      const meta = SF_FOOD_FILTERS.find(x => x.v === sfFoodFilter.value);
+      const label = sfFoodFilter.value === 'all' ? '已試食物' : (meta ? meta.label : '') + '食物';
+      return label + '（' + sfFoodsFiltered.value.length + ' 款）';
+    });
+    const sfFoodEmptyText = computed(() => {
+      const meta = SF_FOOD_FILTERS.find(x => x.v === sfFoodFilter.value);
+      return sfFoodFilter.value === 'all' ? '暫無已試食物' : '暫無' + (meta ? meta.label : '') + '食物';
+    });
+    const sfFoodReactions = (f) => (f.symptoms && f.symptoms.length ? f.symptoms : (f.reaction ? [f.reaction] : [])).join('、');
 
     // Sleep page
     const sleepHistory = ref([]);
@@ -1469,6 +1495,7 @@ const app = createApp({
     }
     function openSolidScreen() {
       sfTab.value = 'records';
+      sfFoodFilter.value = 'all';
       go(5);
     }
     const sfSummary = computed(() => ({
@@ -2256,6 +2283,7 @@ const app = createApp({
       diaperSummary, diaperItemLabel, diaperItemIcon, diaperItemCls, diaperItemDetail,
       // Solid food (輔食)
       sfRecords, sfFoods, sfTab, sfForm, sfSummary, sfReactionEmoji,
+      sfFoodFilter, SF_FOOD_FILTERS, sfFoodCounts, sfFoodsFiltered, sfFoodListTitle, sfFoodEmptyText, sfFoodReactions,
       SF_CATEGORIES, SF_TEXTURES, SF_AMOUNTS, SF_REACTIONS, SF_SYMPTOMS, SF_STATUS_META,
       openSolidScreen, openSolidForm, saveSolidFood, deleteSolidFood, sfToggleSymptom, sfCanSave,
       // Sleep
@@ -2665,14 +2693,19 @@ const app = createApp({
 
     <!-- 食物清單 tab -->
     <template v-else>
-      <div class="nt nc food-intro"><span class="nn" style="color:var(--blue)"><svg><use href="#i-info"/></svg></span><div class="nb2"><strong>已試食物清單</strong>每款新食物連續試 3 日先轉下一款，方便追蹤過敏源。觀察中 ＝ 3 日觀察期內。</div></div>
-      <div class="st">已試食物（{{ sfFoods.length }} 款）</div>
-      <div class="cs" v-if="sfFoods.length">
-        <div class="cl" v-for="f in sfFoods" :key="f.name">
-          <div class="ri food"><svg><use href="#i-food"/></svg></div>
+      <div class="nt nc food-intro" v-if="!(sfFoodFilter === 'alert' && sfFoodsFiltered.length)"><span class="nn" style="color:var(--blue)"><svg><use href="#i-info"/></svg></span><div class="nb2"><strong>已試食物清單</strong>每款新食物連續試 3 日先轉下一款，方便追蹤過敏源。觀察中 ＝ 3 日觀察期內。</div></div>
+      <!-- shortcut filter: 全部 / 過敏 / 觀察中 / 安全 -->
+      <div class="chips sf-filter" v-if="sfFoods.length">
+        <div class="chip" v-for="o in SF_FOOD_FILTERS" :key="o.v" :class="{[o.cls]: sfFoodFilter === o.v}" @click="sfFoodFilter = o.v">{{ o.label }}<span class="chip-n">{{ sfFoodCounts[o.v] }}</span></div>
+      </div>
+      <div class="nt nc food-intro food-alert-note" v-if="sfFoodFilter === 'alert' && sfFoodsFiltered.length"><span class="nn" style="color:var(--red)"><svg><use href="#i-info"/></svg></span><div class="nb2"><strong>已記錄過敏食物</strong>以下食物曾記錄異常反應，再食之前請先諮詢醫生。</div></div>
+      <div class="st">{{ sfFoodListTitle }}</div>
+      <div class="cs" v-if="sfFoodsFiltered.length">
+        <div class="cl" v-for="f in sfFoodsFiltered" :key="f.name">
+          <div class="ri food" :class="{alert: f.status === 'alert'}"><svg><use href="#i-food"/></svg></div>
           <div class="cb">
             <div class="ct">{{ f.name }}</div>
-            <div class="cd">{{ f.category }} · 首次 {{ f.since }}<template v-if="f.status === 'alert' && f.reaction"> · 曾有{{ f.reaction }}</template></div>
+            <div class="cd">{{ f.category }} · 首次 {{ f.since }}<template v-if="f.status === 'alert' && sfFoodReactions(f)"> · 曾有{{ sfFoodReactions(f) }}</template></div>
           </div>
           <div class="cr food-status">
             <span class="tg" :class="SF_STATUS_META[f.status].cls" style="margin-left:0">{{ SF_STATUS_META[f.status].label }}</span>
@@ -2680,7 +2713,7 @@ const app = createApp({
           </div>
         </div>
       </div>
-      <div class="empty-state" v-else><svg><use href="#i-food"/></svg><p>暫無已試食物</p></div>
+      <div class="empty-state" v-else><svg><use href="#i-food"/></svg><p>{{ sfFoodEmptyText }}</p></div>
     </template>
     <div style="height:24px"></div>
   </div>
