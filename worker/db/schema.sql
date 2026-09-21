@@ -425,3 +425,16 @@ CREATE TABLE IF NOT EXISTS milestone_video_chunks (
 
 CREATE INDEX IF NOT EXISTS idx_milestone_videos_mid ON milestone_videos(milestone_id);
 CREATE INDEX IF NOT EXISTS idx_msvchunk_vid ON milestone_video_chunks(video_id, idx);
+
+
+-- Medication administration records (single baby, like feeds and temperatures)
+CREATE TABLE IF NOT EXISTS medications (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  time TEXT NOT NULL,
+  name TEXT NOT NULL,
+  dose REAL NOT NULL CHECK(dose > 0),
+  unit TEXT NOT NULL CHECK(unit IN ('ml', 'mg', 'g', '滴', '粒', '包', '次')),
+  note TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_medications_time ON medications(time DESC);

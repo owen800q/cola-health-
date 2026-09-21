@@ -15,6 +15,7 @@ import { pushRoutes } from './routes/push';
 import { timelineRoutes } from './routes/timeline';
 import { bottleRoutes } from './routes/bottle';
 import { aiRoutes } from './routes/ai';
+import { medicationRoutes } from './routes/medication';
 import { temperatureRoutes } from './routes/temperature';
 import { babyRoomsRoutes } from './routes/babyrooms';
 import { milestoneRoutes } from './routes/milestone';
@@ -54,6 +55,7 @@ app.route('/api/timeline', timelineRoutes);
 app.route('/api/bottles', bottleRoutes);
 app.route('/api/ai', aiRoutes);
 app.route('/api/temperatures', temperatureRoutes);
+app.route('/api/medications', medicationRoutes);
 app.route('/api/babyrooms', babyRoomsRoutes);
 app.route('/api/milestones', milestoneRoutes);
 app.route('/api/solidfoods', solidFoodRoutes);
@@ -69,3 +71,4 @@ export default {
     ctx.waitUntil(handleScheduled(env));
   },
 };
+

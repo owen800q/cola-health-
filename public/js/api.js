@@ -94,6 +94,12 @@
     updateTemperature: (id, data) => request('/temperatures/' + id, { method: 'PUT', body: data }),
     deleteTemperature: (id) => request('/temperatures/' + id, { method: 'DELETE' }),
 
+    // ---- Medication records ----
+    getMedications: (params) => request('/medications?' + new URLSearchParams(params).toString()),
+    createMedication: (data) => request('/medications', { method: 'POST', body: data }),
+    updateMedication: (id, data) => request('/medications/' + id, { method: 'PUT', body: data }),
+    deleteMedication: (id) => request('/medications/' + id, { method: 'DELETE' }),
+
     // ---- Timeline ----
     getTimeline: (babyId, params) => {
       const q = new URLSearchParams({ baby_id: babyId, ...params }).toString();
@@ -186,3 +192,4 @@
     },
   };
 })();
+
