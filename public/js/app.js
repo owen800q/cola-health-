@@ -250,6 +250,94 @@ const app = createApp({
     const sleepQuality = ref('好 · 瞓得穩');
     const sleepNotes = ref('');
 
+    // Medication records
+    const medicationHistory = ref([]);
+    const medicationLoading = ref(false);
+    const medicationError = ref('');
+    const medicationUnits = ['ml', 'mg', 'g', '滴', '粒', '包', '次'];
+    const medicationForm = reactive({ name: '', dose: '', unit: 'ml', date: '', time: '', note: '' });
+    let medicationLoadId = 0;
+    let medicationOriginalTime = null;
+
+    function openMedicationScreen() {
+      viewDate.value = new Date();
+      if (currentPage.value === 7) loadMedicationHistory();
+      else go(7);
+    }
+
+    async function loadMedicationHistory() {
+      const requestId = ++medicationLoadId;
+      medicationLoading.value = true;
+      medicationError.value = '';
+      medicationHistory.value = [];
+      try {
+        const records = await API.getMedications(viewDayRange());
+        if (requestId === medicationLoadId) medicationHistory.value = records || [];
+      } catch (e) {
+        if (requestId === medicationLoadId) medicationError.value = '未能載入食藥記錄，請重試';
+      } finally {
+        if (requestId === medicationLoadId) medicationLoading.value = false;
+      }
+    }
+
+    function openMedicationForm(item) {
+      editingId.value = item ? item.id : null;
+      editingType.value = item ? 'medication' : null;
+      const d = item ? new Date(item.time) : new Date();
+      medicationOriginalTime = item ? item.time : null;
+      Object.assign(medicationForm, {
+        name: item ? item.name : '', dose: item ? item.dose : '', unit: item ? item.unit : 'ml',
+        date: fmtDate(item ? d : viewDate.value), time: pad(d.getHours()) + ':' + pad(d.getMinutes()),
+        note: item ? item.note || '' : '',
+      });
+      openSub('am');
+    }
+
+    async function saveMedication() {
+      if (saving.value) return;
+      const name = medicationForm.name.trim();
+      const dose = Number(medicationForm.dose);
+      const date = new Date(medicationForm.date + 'T' + medicationForm.time + ':00');
+      if (!name || name.length > 200) return showToast('請輸入藥名（最多 200 字）');
+      if (!Number.isFinite(dose) || dose <= 0) return showToast('請輸入大於 0 的份量');
+      if (!medicationUnits.includes(medicationForm.unit)) return showToast('請選擇份量單位');
+      if (!Number.isFinite(date.getTime()) || fmtDate(date) !== medicationForm.date || date.getTime() > Date.now()) return showToast('請輸入有效的已服藥日期及時間');
+      if (medicationForm.note.length > 2000) return showToast('備註最多 2000 字');
+      let time = date.toISOString();
+      if (medicationOriginalTime && fmtDate(medicationOriginalTime) === medicationForm.date && fmtTime(medicationOriginalTime) === medicationForm.time) time = medicationOriginalTime;
+      const data = { name, dose, unit: medicationForm.unit, time, note: medicationForm.note.trim() || null };
+      saving.value = true;
+      showLoading('儲存中...');
+      try {
+        if (editingId.value && editingType.value === 'medication') await API.updateMedication(editingId.value, data);
+        else await API.createMedication(data);
+        hideLoading();
+        showToast(editingId.value ? '食藥記錄已更新' : '食藥記錄已儲存');
+        viewDate.value = date;
+        closeSub();
+        loadMedicationHistory();
+        loadHomeData();
+      } catch (e) { hideLoading(); showToast('儲存失敗，請重試'); }
+      finally { saving.value = false; }
+    }
+
+    async function deleteMedication(id) {
+      if (saving.value) return;
+      const ok = await confirmDialog('刪除食藥記錄？', '刪除後無法恢復');
+      if (!ok || saving.value) return;
+      saving.value = true;
+      showLoading('刪除中...');
+      try {
+        await API.deleteMedication(id);
+        if (editingType.value === 'medication' && editingId.value === id) closeSub();
+        hideLoading();
+        showToast('食藥記錄已刪除');
+        loadMedicationHistory();
+        loadHomeData();
+      } catch (e) { hideLoading(); showToast('刪除失敗，請重試'); }
+      finally { saving.value = false; }
+    }
+
     // Temperature page
     const tempHistory = ref([]);
     const tempValue = ref(36.5);
@@ -1338,6 +1426,11 @@ const app = createApp({
               const dur = Math.floor((new Date(e.end_time) - new Date(e.time)) / 1000);
               detail = dur > 60 ? '瞓咗 ' + fmtDurCN(dur) : '';
             } else { icon = 'i-moon'; cls = 'slp'; title = '瞓著咗'; }
+          } else if (e.record_type === 'medication') {
+            icon = 'i-pill'; cls = 'medication';
+            title = '食藥 · ' + e.name;
+            detail = e.note || '';
+            vol = e.dose + ' ' + e.unit;
           } else if (e.record_type === 'temperature') {
             icon = 'i-thermo'; cls = e.fever ? 'temp-fever' : 'temp';
             title = (tempMethodLabel[e.method] || '耳溫') + (e.fever ? ' · 發燒' : '');
@@ -1439,6 +1532,7 @@ const app = createApp({
       else if (item.type === 'diaper') editDiaper(item.raw);
       else if (item.type === 'sleep') editSleep(item.raw);
       else if (item.type === 'temperature') editTemp(item.raw);
+      else if (item.type === 'medication') openMedicationForm(item.raw);
       else if (item.type === 'solidfood') editSolidFood(item.raw);
     }
 
@@ -1908,6 +2002,7 @@ const app = createApp({
       else if (p === 2) loadDiaperHistory();
       else if (p === 3) loadSleepHistory();
       else if (p === 5) loadSolidFoods();
+      else if (p === 7) loadMedicationHistory();
     }
 
     // Date picker (tap the date label to jump to any date)
@@ -2281,6 +2376,7 @@ const app = createApp({
         else if (p === 2) loadDiaperHistory();
         else if (p === 3) loadSleepHistory();
         else if (p === 5) { loadSolidFoods(); loadSolidFoodList(); }
+        else if (p === 7) loadMedicationHistory();
       }
     }
     document.addEventListener('visibilitychange', onVisibilityChange);
@@ -2299,6 +2395,7 @@ const app = createApp({
       if (p === 3) loadSleepHistory();
       if (p === 5) { loadSolidFoods(); loadSolidFoodList(); }
       if (p === 6) loadMilestones();
+      if (p === 7) loadMedicationHistory();
     });
 
     return {
@@ -2328,6 +2425,9 @@ const app = createApp({
       toggleSleep, saveManualSleep, deleteSleep,
       manualSleepStart, manualSleepEnd, sleepQuality, sleepNotes,
       sleepSummaryData,
+      // Medication
+      medicationHistory, medicationLoading, medicationError, medicationUnits, medicationForm,
+      openMedicationScreen, openMedicationForm, saveMedication, deleteMedication, loadMedicationHistory,
       // Temperature
       tempHistory, tempValue, tempMethod, tempTime, tempNotes,
       adjTemp, saveTemp, deleteTemp, tempSummary,
@@ -2425,6 +2525,7 @@ const app = createApp({
       <div class="gi" @click="openSub('ad'); initTimes()"><div class="gi-ico" style="color:var(--green)"><svg><use href="#i-edit"/></svg></div><span>記錄換片</span></div>
       <div class="gi" @click="openSub('as')"><div class="gi-ico" style="color:var(--purple)"><svg><use href="#i-moon"/></svg></div><span>記錄睡眠</span></div>
       <div class="gi" @click="openSub('at'); initTimes(); loadTempHistory()"><div class="gi-ico" style="color:var(--red)"><svg><use href="#i-thermo"/></svg></div><span>量體溫</span></div>
+      <div class="gi" @click="openMedicationScreen()"><div class="gi-ico" style="color:var(--purple)"><svg><use href="#i-pill"/></svg></div><span>記錄食藥</span></div>
       <div class="gi" @click="openSolidScreen()"><div class="gi-ico"><img class="gi-img" src="/icons/solid-food.svg" alt="記錄輔食"></div><span>記錄輔食</span></div>
       <div class="gi" @click="openSub('g6')"><div class="gi-ico" style="color:var(--red)"><svg><use href="#i-warn"/></svg></div><span>蠶豆病</span></div>
       <div class="gi" @click="openSub('he')"><div class="gi-ico" style="color:var(--warn)"><svg><use href="#i-shield"/></svg></div><span>疫苗接種</span></div>
@@ -2557,6 +2658,7 @@ const app = createApp({
     </div>
     <div class="st">健康</div>
     <div class="cs">
+      <div class="cl" @click="openMedicationScreen()"><span class="ci" style="color:var(--purple)"><svg><use href="#i-pill"/></svg></span><div class="cb"><div class="ct">食藥記錄</div><div class="cd">藥名、份量及食藥時間</div></div><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
       <div class="cl" @click="openSub('gc'); loadGrowth()"><span class="ci" style="color:var(--green)"><svg><use href="#i-chart"/></svg></span><div class="cb"><div class="ct">成長曲線</div><div class="cd">0–5歲體重/身高百分位 (WHO · 衞生署)</div></div><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
       <div class="cl" @click="openSub('he')"><span class="ci" style="color:var(--green)"><svg><use href="#i-shield"/></svg></span><div class="cb"><div class="ct">疫苗接種計劃</div><div class="cd">香港兒童免疫接種計劃</div></div><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
       <div class="cl" @click="openSub('hs')"><span class="ci" style="color:var(--blue)"><svg><use href="#i-health"/></svg></span><div class="cb"><div class="ct">幼兒健康及發展綜合計劃</div></div><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
@@ -2842,6 +2944,47 @@ const app = createApp({
     </div>
     <div class="nt np"><span class="nn" style="color:var(--purple)"><svg><use href="#i-moon"/></svg></span><div class="nb2"><strong>睡眠小貼士</strong>新生兒約需 16-17 小時睡眠。可以用「睡眠」tab 嘅大按鈕快速記錄入睡/醒來時間。</div></div>
     <div class="ba"><a href="javascript:;" class="bp" :class="{disabled: saving}" @click="saveManualSleep">{{ editingType === 'sleep' ? '更新記錄' : '儲存記錄' }}</a></div>
+  </div>
+
+  <!-- ===== MEDICATION HISTORY ===== -->
+  <div class="page medication-page" :class="{active: currentPage === 7}">
+    <div class="nb"><span class="nb-back" @click="go(0)"><svg><use href="#i-back"/></svg></span><span class="nb-t">食藥記錄</span><button class="medication-add" aria-label="新增食藥記錄" @click="openMedicationForm()"><svg><use href="#i-plus"/></svg></button></div>
+    <div class="dn"><span class="da" @click="prevDay"><svg><use href="#i-back"/></svg></span><span class="dt" @click="openDatePicker">{{ viewDateStr }}</span><span class="da" @click="nextDay"><svg><use href="#i-arrow"/></svg></span></div>
+    <div class="btn-row"><button class="bp" @click="openMedicationForm()">記錄食藥</button></div>
+    <div class="st">當日食藥記錄<span v-if="!medicationLoading && !medicationError">（{{ medicationHistory.length }} 次）</span></div>
+    <div class="empty-state" v-if="medicationLoading" role="status"><p>載入中...</p></div>
+    <div class="empty-state" v-else-if="medicationError" role="alert"><p>{{ medicationError }}</p><button class="bp-outline" @click="loadMedicationHistory">重試</button></div>
+    <div class="cs" v-else-if="medicationHistory.length">
+      <div class="sw-row" v-for="item in medicationHistory" :key="item.id">
+        <div class="sw-c" @touchstart="swStart" @touchmove.prevent="swMove" @touchend="swEnd">
+          <div class="cl" @click="openMedicationForm(item)">
+            <div class="ri medication"><svg><use href="#i-pill"/></svg></div>
+            <div class="cb"><div class="ct medication-text">{{ item.name }}</div><div class="cd medication-text" v-if="item.note">{{ item.note }}</div></div>
+            <div class="cr"><div class="cv">{{ item.dose }} {{ item.unit }}</div><div class="cm">{{ fmtTime(item.time) }}</div></div>
+          </div>
+        </div>
+        <div class="sw-del" @click="deleteMedication(item.id)">刪除</div>
+      </div>
+    </div>
+    <div class="empty-state" v-else><svg><use href="#i-pill"/></svg><p>當日暫無食藥記錄</p></div>
+  </div>
+
+  <!-- ===== SUB: ADD / EDIT MEDICATION ===== -->
+  <div class="sub medication-form" :class="{active: activeSub === 'am'}">
+    <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">{{ editingType === 'medication' ? '編輯食藥記錄' : '新增食藥記錄' }}</span><div class="nb-ph"></div></div>
+    <form @submit.prevent="saveMedication">
+      <div class="st">已服用藥物</div>
+      <div class="fc">
+        <label class="fi"><span class="fl">藥名</span><input class="fv" type="text" v-model="medicationForm.name" maxlength="200" placeholder="輸入藥袋上的名稱" required></label>
+        <label class="fi"><span class="fl">份量</span><input class="fv" type="number" inputmode="decimal" v-model="medicationForm.dose" step="any" min="0" placeholder="輸入實際份量" required></label>
+        <label class="fi"><span class="fl">單位</span><select class="fs" v-model="medicationForm.unit"><option v-for="unit in medicationUnits" :key="unit" :value="unit">{{ unit }}</option></select></label>
+        <label class="fi"><span class="fl">食藥日期</span><input class="fv" type="date" v-model="medicationForm.date" required></label>
+        <label class="fi"><span class="fl">食藥時間</span><input class="fv" type="time" v-model="medicationForm.time" required></label>
+      </div>
+      <div class="fc" style="margin-top:16px"><label class="fi"><span class="fl">備註</span><textarea class="fv" v-model="medicationForm.note" maxlength="2000" rows="3" placeholder="例如：飯後服用"></textarea></label></div>
+      <div class="ba"><button class="bp" type="submit" :disabled="saving">{{ saving ? '儲存中...' : editingType === 'medication' ? '更新記錄' : '儲存記錄' }}</button></div>
+      <div class="btn-row" v-if="editingType === 'medication'"><button class="bp-outline medication-delete" type="button" :disabled="saving" @click="deleteMedication(editingId)">刪除記錄</button></div>
+    </form>
   </div>
 
   <!-- ===== SUB: TEMPERATURE ===== -->
@@ -3357,3 +3500,4 @@ if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js').catch(() => {});
   });
 }
+

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cola-health-v8';
+const CACHE_NAME = 'cola-health-v9';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -142,3 +142,4 @@ self.addEventListener('notificationclick', (event) => {
     })
   );
 });
+

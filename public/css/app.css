@@ -623,3 +623,16 @@ label.fi { cursor: pointer; }
 .ms-player { position: fixed; inset: 0; z-index: 9999; background: #000; display: flex; align-items: center; justify-content: center; }
 .ms-player-x { position: absolute; top: calc(12px + env(safe-area-inset-top)); right: 16px; width: 36px; height: 36px; border-radius: 50%; background: rgba(255,255,255,0.18); display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 2; }
 .ms-player-x svg { width: 22px; height: 22px; color: #fff; }
+
+
+/* Medication records */
+.ri.medication { background: #F3E8FF; color: var(--purple); }
+.medication-text { overflow-wrap: anywhere; white-space: pre-wrap; }
+.medication-add { border: 0; background: transparent; color: var(--blue); width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.medication-add svg { width: 20px; height: 20px; }
+.medication-form { padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
+.medication-form .fv { min-width: 0; }
+.medication-form textarea { resize: vertical; text-align: left; }
+.medication-form button, .medication-page button { font-family: inherit; cursor: pointer; }
+.medication-form .medication-delete { color: var(--red); border-color: var(--red); }
+.medication-form button:disabled { opacity: 0.5; cursor: default; }
