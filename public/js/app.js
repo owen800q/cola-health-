@@ -338,6 +338,171 @@ const app = createApp({
       finally { saving.value = false; }
     }
 
+    // Doctor's instructions (醫生指示): quick notes during a visit, with an optional repeating push reminder
+    const doctorNotes = ref([]);
+    const doctorActive = ref([]);
+    const doctorLoading = ref(false);
+    const doctorError = ref('');
+    const DOCTOR_PRESETS = ['每半小時量一次體溫', '超過 38.5°C 先食退燒藥', '多啲飲水／飲奶', '留意有冇出疹', '情況轉差即刻返嚟睇', '兩日後覆診'];
+    const DOCTOR_INTERVALS = [{ v: 0, label: '不提醒' }, { v: 15, label: '15分鐘' }, { v: 30, label: '半小時' }, { v: 60, label: '1小時' }, { v: 120, label: '2小時' }, { v: 240, label: '4小時' }];
+    const DOCTOR_DURATIONS = [{ v: 120, label: '2小時' }, { v: 240, label: '4小時' }, { v: 480, label: '8小時' }, { v: 720, label: '12小時' }, { v: 1440, label: '24小時' }, { v: 4320, label: '3日' }];
+    const doctorForm = reactive({ content: '', date: '', time: '', interval: 0, duration: 240 });
+    const doctorEditing = ref(null);   // original note while editing
+    let doctorLoadId = 0;
+
+    function doctorIntervalLabel(m) {
+      if (!m) return '';
+      if (m === 30) return '每半小時';
+      if (m === 60) return '每小時';
+      return m % 60 === 0 ? '每 ' + (m / 60) + ' 小時' : '每 ' + m + ' 分鐘';
+    }
+    // Same slot maths as the server cron: remind_from + k * interval, up to remind_until.
+    function doctorNext(n) {
+      if (!n || !n.interval_minutes || !n.remind_from || !n.remind_until) return null;
+      const from = Date.parse(n.remind_from), until = Date.parse(n.remind_until), iv = n.interval_minutes * 60000;
+      const next = from + (Math.floor((now.value - from) / iv) + 1) * iv;
+      return next <= until ? next : null;
+    }
+    function doctorCountdown(n) {
+      const next = doctorNext(n);
+      if (!next) return '';
+      const min = Math.max(0, Math.ceil((next - now.value) / 60000));
+      if (min < 1) return '就快';
+      if (min < 60) return min + ' 分鐘後';
+      return Math.floor(min / 60) + ' 小時' + (min % 60 ? ' ' + (min % 60) + ' 分' : '') + '後';
+    }
+    function fmtShortDateTime(ms) {
+      const d = new Date(ms);
+      return (fmtDate(d) === todayStr() ? '' : (d.getMonth() + 1) + '月' + d.getDate() + '日 ') + fmtTime(d);
+    }
+    const doctorActiveLive = computed(() => doctorActive.value.filter(n => doctorNext(n)));
+    const doctorFormHasReminder = computed(() => !!(doctorEditing.value && doctorNext(doctorEditing.value)));
+    const doctorEditingInterval = () => doctorEditing.value ? doctorEditing.value.interval_minutes : 0;
+
+    function openDoctorScreen() {
+      if (currentPage.value === 8) loadDoctorNotes();
+      else go(8);
+    }
+
+    async function loadDoctorActive() {
+      try { doctorActive.value = await API.getDoctorNotes({ active: 1 }) || []; } catch (e) { console.warn(e); }
+    }
+
+    async function loadDoctorNotes() {
+      const requestId = ++doctorLoadId;
+      doctorLoading.value = true;
+      doctorError.value = '';
+      try {
+        const [all, active] = await Promise.all([API.getDoctorNotes({ limit: 200 }), API.getDoctorNotes({ active: 1 })]);
+        if (requestId !== doctorLoadId) return;
+        doctorNotes.value = all || [];
+        doctorActive.value = active || [];
+      } catch (e) {
+        if (requestId === doctorLoadId) doctorError.value = '未能載入醫生指示，請重試';
+      } finally {
+        if (requestId === doctorLoadId) doctorLoading.value = false;
+      }
+    }
+
+    function openDoctorForm(item) {
+      editingId.value = item ? item.id : null;
+      editingType.value = item ? 'doctor_note' : null;
+      doctorEditing.value = item || null;
+      const d = item ? new Date(item.time) : new Date();
+      const live = item && doctorNext(item);
+      Object.assign(doctorForm, {
+        content: item ? item.content : '',
+        date: fmtDate(d), time: pad(d.getHours()) + ':' + pad(d.getMinutes()),
+        interval: live ? item.interval_minutes : 0,
+        duration: 240,
+      });
+      openSub('doc');
+      if (!item) nextTick(() => { const el = document.getElementById('doctor-content'); if (el) el.focus(); });
+    }
+
+    function doctorAddPreset(text) {
+      const cur = doctorForm.content.trim();
+      if (cur.includes(text)) return;
+      doctorForm.content = cur ? cur + '\n' + text : text;
+      if (text.includes('半小時') && !doctorForm.interval && !doctorFormHasReminder.value) doctorForm.interval = 30;
+    }
+
+    async function saveDoctorNote() {
+      if (saving.value) return;
+      const content = doctorForm.content.trim();
+      const date = new Date(doctorForm.date + 'T' + doctorForm.time + ':00');
+      if (!content) return showToast('請輸入醫生指示');
+      if (content.length > 2000) return showToast('最多 2000 字');
+      if (!Number.isFinite(date.getTime()) || fmtDate(date) !== doctorForm.date || date.getTime() > Date.now() + 5 * 60000) return showToast('請輸入有效日期及時間');
+      let time = date.toISOString();
+      const orig = doctorEditing.value;
+      if (orig && fmtDate(orig.time) === doctorForm.date && fmtTime(orig.time) === doctorForm.time) time = orig.time;
+      const iv = doctorForm.interval;
+      const reminder = iv ? { interval_minutes: iv, duration_minutes: Math.max(iv, doctorForm.duration) } : {};
+      saving.value = true;
+      showLoading('儲存中...');
+      try {
+        if (orig) {
+          await API.updateDoctorNote(orig.id, { content, time });
+          // Only touch the schedule when the reminder setting actually changed.
+          const wasLive = !!doctorNext(orig);
+          if (iv && (!wasLive || iv !== orig.interval_minutes)) await API.startDoctorReminder(orig.id, reminder);
+          else if (!iv && wasLive) await API.stopDoctorReminder(orig.id);
+        } else {
+          await API.createDoctorNote({ content, time, ...reminder });
+        }
+        hideLoading();
+        showToast(iv && !pushEnabled.value ? '已儲存（請開啟通知以收到提醒）' : orig ? '醫生指示已更新' : '醫生指示已儲存');
+        closeSub();
+        loadDoctorNotes();
+        loadHomeData();
+      } catch (e) { hideLoading(); showToast('儲存失敗，請重試'); }
+      finally { saving.value = false; }
+    }
+
+    async function restartDoctorReminder(n) {
+      if (saving.value) return;
+      const iv = n.interval_minutes;
+      const left = Math.round((Date.parse(n.remind_until) - Date.parse(n.remind_from)) / 60000);
+      saving.value = true;
+      try {
+        await API.startDoctorReminder(n.id, { interval_minutes: iv, duration_minutes: Math.max(iv, left) });
+        showToast('已由而家重新計時');
+        loadDoctorNotes();
+      } catch (e) { showToast('操作失敗，請重試'); }
+      finally { saving.value = false; }
+    }
+
+    async function stopDoctorReminder(n) {
+      if (saving.value) return;
+      const ok = await confirmDialog('停止提醒？', '醫生指示會保留，只係唔再推送提醒');
+      if (!ok || saving.value) return;
+      saving.value = true;
+      try {
+        await API.stopDoctorReminder(n.id);
+        showToast('已停止提醒');
+        loadDoctorNotes();
+      } catch (e) { showToast('操作失敗，請重試'); }
+      finally { saving.value = false; }
+    }
+
+    async function deleteDoctorNote(id) {
+      if (saving.value) return;
+      const ok = await confirmDialog('刪除醫生指示？', '刪除後無法恢復，相關提醒亦會停止');
+      if (!ok || saving.value) return;
+      saving.value = true;
+      showLoading('刪除中...');
+      try {
+        await API.deleteDoctorNote(id);
+        if (editingType.value === 'doctor_note' && editingId.value === id) closeSub();
+        hideLoading();
+        showToast('醫生指示已刪除');
+        loadDoctorNotes();
+        loadHomeData();
+      } catch (e) { hideLoading(); showToast('刪除失敗，請重試'); }
+      finally { saving.value = false; }
+    }
+
     // Temperature page
     const tempHistory = ref([]);
     const tempValue = ref(36.5);
@@ -1364,6 +1529,7 @@ const app = createApp({
     // ===== DATA LOADING =====
     async function loadHomeData() {
       if (!store.babyId) return;
+      loadDoctorActive();
       try {
         const range = localDayRange();
         const [feeds, diapers, sleeps, timeline, temps, solids] = await Promise.all([
@@ -1431,6 +1597,11 @@ const app = createApp({
             title = '食藥 · ' + e.name;
             detail = e.note || '';
             vol = e.dose + ' ' + e.unit;
+          } else if (e.record_type === 'doctor_note') {
+            icon = 'i-steth'; cls = 'doctor';
+            title = '醫生指示';
+            detail = e.content || '';
+            vol = doctorIntervalLabel(e.interval_minutes);
           } else if (e.record_type === 'temperature') {
             icon = 'i-thermo'; cls = e.fever ? 'temp-fever' : 'temp';
             title = (tempMethodLabel[e.method] || '耳溫') + (e.fever ? ' · 發燒' : '');
@@ -1533,6 +1704,7 @@ const app = createApp({
       else if (item.type === 'sleep') editSleep(item.raw);
       else if (item.type === 'temperature') editTemp(item.raw);
       else if (item.type === 'medication') openMedicationForm(item.raw);
+      else if (item.type === 'doctor_note') openDoctorForm(item.raw);
       else if (item.type === 'solidfood') editSolidFood(item.raw);
     }
 
@@ -2399,6 +2571,7 @@ const app = createApp({
         else if (p === 3) loadSleepHistory();
         else if (p === 5) { loadSolidFoods(); loadSolidFoodList(); }
         else if (p === 7) loadMedicationHistory();
+        else if (p === 8) loadDoctorNotes();
       }
     }
     document.addEventListener('visibilitychange', onVisibilityChange);
@@ -2418,6 +2591,7 @@ const app = createApp({
       if (p === 5) { loadSolidFoods(); loadSolidFoodList(); }
       if (p === 6) loadMilestones();
       if (p === 7) loadMedicationHistory();
+      if (p === 8) loadDoctorNotes();
     });
 
     return {
@@ -2450,6 +2624,12 @@ const app = createApp({
       // Medication
       medicationHistory, medicationLoading, medicationError, medicationUnits, medicationForm,
       openMedicationScreen, openMedicationForm, saveMedication, deleteMedication, loadMedicationHistory,
+      // Doctor's instructions
+      doctorNotes, doctorLoading, doctorError, doctorForm, doctorActiveLive, doctorFormHasReminder,
+      DOCTOR_PRESETS, DOCTOR_INTERVALS, DOCTOR_DURATIONS,
+      doctorIntervalLabel, doctorNext, doctorEditingInterval, doctorCountdown, fmtShortDateTime,
+      openDoctorScreen, openDoctorForm, doctorAddPreset, saveDoctorNote, loadDoctorNotes,
+      restartDoctorReminder, stopDoctorReminder, deleteDoctorNote,
       // Temperature
       tempHistory, tempValue, tempMethod, tempTime, tempNotes,
       adjTemp, saveTemp, deleteTemp, tempSummary,
@@ -2542,12 +2722,21 @@ const app = createApp({
         <van-progress :percentage="nextFeedProgress" :show-pivot="false" stroke-width="3" :color="nextFeedOverdue ? 'var(--red)' : 'var(--blue)'" track-color="rgba(0,0,0,0.04)" />
       </div>
     </div>
+    <div class="st" v-if="doctorActiveLive.length">醫生指示提醒</div>
+    <div class="cs" v-if="doctorActiveLive.length">
+      <div class="cl" v-for="n in doctorActiveLive" :key="'dn' + n.id" @click="openDoctorScreen()">
+        <div class="ri doctor"><svg><use href="#i-steth"/></svg></div>
+        <div class="cb"><div class="ct doctor-text doctor-clamp">{{ n.content }}</div><div class="cd">{{ doctorIntervalLabel(n.interval_minutes) }} · 下次 {{ fmtShortDateTime(doctorNext(n)) }}</div></div>
+        <div class="cr"><div class="cv doctor-due">{{ doctorCountdown(n) }}</div></div>
+      </div>
+    </div>
     <div class="gd">
       <div class="gi" @click="openSub('af'); initTimes()"><div class="gi-ico" style="color:var(--blue)"><svg><use href="#i-plus"/></svg></div><span>記錄飲奶</span></div>
       <div class="gi" @click="openSub('ad'); initTimes()"><div class="gi-ico" style="color:var(--green)"><svg><use href="#i-edit"/></svg></div><span>記錄換片</span></div>
       <div class="gi" @click="openSub('as')"><div class="gi-ico" style="color:var(--purple)"><svg><use href="#i-moon"/></svg></div><span>記錄睡眠</span></div>
       <div class="gi" @click="openSub('at'); initTimes(); loadTempHistory()"><div class="gi-ico" style="color:var(--red)"><svg><use href="#i-thermo"/></svg></div><span>量體溫</span></div>
       <div class="gi" @click="openMedicationScreen()"><div class="gi-ico" style="color:var(--purple)"><svg><use href="#i-pill"/></svg></div><span>記錄食藥</span></div>
+      <div class="gi" @click="openDoctorForm()"><div class="gi-ico" style="color:var(--teal)"><svg><use href="#i-steth"/></svg></div><span>醫生指示</span></div>
       <div class="gi" @click="openSolidScreen()"><div class="gi-ico"><img class="gi-img" src="/icons/solid-food.svg" alt="記錄輔食"></div><span>記錄輔食</span></div>
       <div class="gi" @click="openSub('g6')"><div class="gi-ico" style="color:var(--red)"><svg><use href="#i-warn"/></svg></div><span>蠶豆病</span></div>
       <div class="gi" @click="openSub('he')"><div class="gi-ico" style="color:var(--warn)"><svg><use href="#i-shield"/></svg></div><span>疫苗接種</span></div>
@@ -2681,6 +2870,7 @@ const app = createApp({
     <div class="st">健康</div>
     <div class="cs">
       <div class="cl" @click="openMedicationScreen()"><span class="ci" style="color:var(--purple)"><svg><use href="#i-pill"/></svg></span><div class="cb"><div class="ct">食藥記錄</div><div class="cd">藥名、份量及食藥時間</div></div><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
+      <div class="cl" @click="openDoctorScreen()"><span class="ci" style="color:var(--teal)"><svg><use href="#i-steth"/></svg></span><div class="cb"><div class="ct">醫生指示</div><div class="cd">睇醫生時即時記低，可定時提醒</div></div><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
       <div class="cl" @click="openSub('gc'); loadGrowth()"><span class="ci" style="color:var(--green)"><svg><use href="#i-chart"/></svg></span><div class="cb"><div class="ct">成長曲線</div><div class="cd">0–5歲體重/身高百分位 (WHO · 衞生署)</div></div><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
       <div class="cl" @click="openSub('he')"><span class="ci" style="color:var(--green)"><svg><use href="#i-shield"/></svg></span><div class="cb"><div class="ct">疫苗接種計劃</div><div class="cd">香港兒童免疫接種計劃</div></div><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
       <div class="cl" @click="openSub('hs')"><span class="ci" style="color:var(--blue)"><svg><use href="#i-health"/></svg></span><div class="cb"><div class="ct">幼兒健康及發展綜合計劃</div></div><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
@@ -3006,6 +3196,66 @@ const app = createApp({
       <div class="fc" style="margin-top:16px"><label class="fi"><span class="fl">備註</span><textarea class="fv" v-model="medicationForm.note" maxlength="2000" rows="3" placeholder="例如：飯後服用"></textarea></label></div>
       <div class="ba"><button class="bp" type="submit" :disabled="saving">{{ saving ? '儲存中...' : editingType === 'medication' ? '更新記錄' : '儲存記錄' }}</button></div>
       <div class="btn-row" v-if="editingType === 'medication'"><button class="bp-outline medication-delete" type="button" :disabled="saving" @click="deleteMedication(editingId)">刪除記錄</button></div>
+    </form>
+  </div>
+
+  <!-- ===== DOCTOR'S INSTRUCTIONS ===== -->
+  <div class="page doctor-page" :class="{active: currentPage === 8}">
+    <div class="nb"><span class="nb-back" @click="go(0)"><svg><use href="#i-back"/></svg></span><span class="nb-t">醫生指示</span><button class="medication-add" aria-label="新增醫生指示" @click="openDoctorForm()"><svg><use href="#i-plus"/></svg></button></div>
+    <div class="btn-row"><button class="bp" @click="openDoctorForm()">即時記低醫生講咩</button></div>
+    <template v-if="doctorActiveLive.length">
+      <div class="st">進行中提醒</div>
+      <div class="cs">
+        <div class="doctor-card" v-for="n in doctorActiveLive" :key="'a' + n.id">
+          <div class="doctor-text doctor-card-t" @click="openDoctorForm(n)">{{ n.content }}</div>
+          <div class="doctor-card-m"><span class="tg tg-b">{{ doctorIntervalLabel(n.interval_minutes) }}</span>下次 <b>{{ fmtShortDateTime(doctorNext(n)) }}</b>（{{ doctorCountdown(n) }}）· 至 {{ fmtShortDateTime(Date.parse(n.remind_until)) }}</div>
+          <div class="doctor-actions">
+            <button class="bp-outline" :disabled="saving" @click="restartDoctorReminder(n)">由而家重新計時</button>
+            <button class="bp-outline doctor-stop" :disabled="saving" @click="stopDoctorReminder(n)">停止提醒</button>
+          </div>
+        </div>
+      </div>
+    </template>
+    <div class="st">所有醫生指示<span v-if="!doctorLoading && !doctorError">（{{ doctorNotes.length }}）</span></div>
+    <div class="empty-state" v-if="doctorLoading && !doctorNotes.length" role="status"><p>載入中...</p></div>
+    <div class="empty-state" v-else-if="doctorError" role="alert"><p>{{ doctorError }}</p><button class="bp-outline" @click="loadDoctorNotes">重試</button></div>
+    <div class="cs" v-else-if="doctorNotes.length">
+      <div class="sw-row" v-for="item in doctorNotes" :key="item.id">
+        <div class="sw-c" @touchstart="swStart" @touchmove.prevent="swMove" @touchend="swEnd">
+          <div class="cl" @click="openDoctorForm(item)">
+            <div class="ri doctor"><svg><use href="#i-steth"/></svg></div>
+            <div class="cb"><div class="ct doctor-text">{{ item.content }}</div><div class="cd">{{ fmtDateCN(item.time) }} {{ fmtTime(item.time) }}<template v-if="item.interval_minutes"> · {{ doctorIntervalLabel(item.interval_minutes) }}提醒{{ doctorNext(item) ? '中' : '（已完結）' }}</template></div></div>
+          </div>
+        </div>
+        <div class="sw-del" @click="deleteDoctorNote(item.id)">刪除</div>
+      </div>
+    </div>
+    <div class="empty-state" v-else><svg><use href="#i-steth"/></svg><p>暫無醫生指示</p></div>
+  </div>
+
+  <!-- ===== SUB: ADD / EDIT DOCTOR'S INSTRUCTION ===== -->
+  <div class="sub medication-form doctor-form" :class="{active: activeSub === 'doc'}">
+    <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">{{ editingType === 'doctor_note' ? '編輯醫生指示' : '醫生指示' }}</span><div class="nb-ph"></div></div>
+    <form @submit.prevent="saveDoctorNote">
+      <div class="st">醫生講咩？</div>
+      <div class="fc"><label class="fi"><textarea id="doctor-content" class="fv" v-model="doctorForm.content" maxlength="2000" rows="4" placeholder="例如：每半小時量一次體溫，超過 38.5°C 食退燒藥"></textarea></label></div>
+      <div class="chips"><span class="chip" v-for="p in DOCTOR_PRESETS" :key="p" :class="{on: doctorForm.content.includes(p)}" @click="doctorAddPreset(p)">＋ {{ p }}</span></div>
+      <div class="st">定時提醒</div>
+      <div class="seg doctor-seg"><div class="seg-btn" v-for="o in DOCTOR_INTERVALS" :key="o.v" :class="{active: doctorForm.interval === o.v}" @click="doctorForm.interval = o.v">{{ o.label }}</div></div>
+      <template v-if="doctorForm.interval && !(doctorFormHasReminder && doctorForm.interval === doctorEditingInterval())">
+        <div class="st">持續幾耐</div>
+        <div class="seg doctor-seg"><div class="seg-btn" v-for="o in DOCTOR_DURATIONS" :key="o.v" :class="{active: doctorForm.duration === o.v}" @click="doctorForm.duration = o.v">{{ o.label }}</div></div>
+        <div class="seg-hint">由儲存一刻開始計，{{ doctorIntervalLabel(doctorForm.interval) }}推送一次通知。</div>
+      </template>
+      <div class="seg-hint" v-else-if="doctorForm.interval">提醒進行中；要由而家重新計時，可喺醫生指示列表撳「由而家重新計時」。</div>
+      <div class="doctor-push" v-if="doctorForm.interval && !pushEnabled"><span>未開啟通知，收唔到提醒</span><button type="button" class="bp-outline" @click="enablePush">開啟通知</button></div>
+      <div class="st">時間</div>
+      <div class="fc">
+        <label class="fi"><span class="fl">日期</span><input class="fv" type="date" v-model="doctorForm.date" required></label>
+        <label class="fi"><span class="fl">時間</span><input class="fv" type="time" v-model="doctorForm.time" required></label>
+      </div>
+      <div class="ba"><button class="bp" type="submit" :disabled="saving">{{ saving ? '儲存中...' : editingType === 'doctor_note' ? '更新' : '儲存' }}</button></div>
+      <div class="btn-row" v-if="editingType === 'doctor_note'"><button class="bp-outline medication-delete" type="button" :disabled="saving" @click="deleteDoctorNote(editingId)">刪除</button></div>
     </form>
   </div>
 

@@ -636,3 +636,24 @@ label.fi { cursor: pointer; }
 .medication-form button, .medication-page button { font-family: inherit; cursor: pointer; }
 .medication-form .medication-delete { color: var(--red); border-color: var(--red); }
 .medication-form button:disabled { opacity: 0.5; cursor: default; }
+
+/* Doctor's instructions (醫生指示) */
+.ri.doctor { background: #E0F7FA; color: var(--teal); }
+.doctor-text { overflow-wrap: anywhere; white-space: pre-wrap; }
+.doctor-clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.doctor-due { color: var(--teal); font-size: 13px; white-space: nowrap; }
+.doctor-card { background: var(--card); padding: 14px 16px; border-bottom: 1px solid var(--t5); }
+.doctor-card:last-child { border-bottom: none; }
+.doctor-card-t { font-size: 16px; color: var(--t1); cursor: pointer; }
+.doctor-card-m { font-size: 13px; color: var(--t2); margin-top: 6px; line-height: 1.6; }
+.doctor-card-m .tg { margin: 0 6px 0 0; }
+.doctor-actions { display: flex; gap: 10px; margin-top: 10px; }
+.doctor-actions .bp-outline { height: 36px; line-height: 34px; font-size: 14px; font-family: inherit; }
+.doctor-actions .doctor-stop { color: var(--red); border-color: var(--red); }
+.doctor-actions button:disabled { opacity: 0.5; }
+.doctor-form .chips { padding-top: 10px; }
+.doctor-form .chip.on { background: #E0F7FA; color: var(--teal); border-color: rgba(0,188,212,0.4); }
+.doctor-seg { flex-wrap: wrap; margin-top: 4px; }
+.doctor-seg .seg-btn { flex: 1 0 30%; font-size: 13px; }
+.doctor-push { display: flex; align-items: center; gap: 12px; margin: 12px 16px 0; font-size: 13px; color: var(--red); }
+.doctor-push .bp-outline { width: auto; height: 32px; line-height: 30px; padding: 0 12px; font-size: 13px; font-family: inherit; }

@@ -438,3 +438,18 @@ CREATE TABLE IF NOT EXISTS medications (
   created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_medications_time ON medications(time DESC);
+
+
+-- Doctor's instructions noted during a visit, with optional repeating push reminder
+-- (e.g. "每半小時量一次體溫"). Reminders fire at remind_from + k * interval until remind_until.
+CREATE TABLE IF NOT EXISTS doctor_notes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  time TEXT NOT NULL,
+  content TEXT NOT NULL,
+  interval_minutes INTEGER CHECK(interval_minutes IS NULL OR interval_minutes BETWEEN 5 AND 1440),
+  remind_from TEXT,
+  remind_until TEXT,
+  last_reminded_at TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_doctor_notes_time ON doctor_notes(time DESC);

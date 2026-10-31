@@ -3,6 +3,7 @@ import type { Bindings } from './index';
 import { sendPush, type PushSub, type VapidKeys } from './lib/webpush';
 import { scrapeAndSync, shouldSync } from './lib/scraper';
 import { ensureVaccineSchema } from './lib/vaccine-schema';
+import { findDueDoctorReminders, markDoctorReminderSent, intervalLabel } from './lib/doctor-note-reminders';
 
 interface PushPayload {
   title: string;
@@ -55,6 +56,14 @@ export async function handleScheduled(env: Bindings): Promise<void> {
     await checkVaccineBookingReminders(db, subs, vapid);
   } catch (e) {
     console.error('Vaccine booking reminder error:', e);
+  }
+
+  // Doctor's instructions with a repeating reminder (e.g. 每半小時量體溫) — set per note,
+  // so they are independent of the reminder toggles too.
+  try {
+    await checkDoctorNoteReminders(db, subs, vapid);
+  } catch (e) {
+    console.error('Doctor note reminder error:', e);
   }
 
   // Get enabled reminders
@@ -210,6 +219,26 @@ async function checkVaccineBookingReminders(
 
     await markNotified(db, key);
     if (!subs.length) return;
+  }
+}
+
+/* ── Doctor's instruction reminders (醫生指示) ── */
+
+async function checkDoctorNoteReminders(
+  db: D1Database, subs: PushSub[], vapid: VapidKeys
+): Promise<void> {
+  const now = Date.now();
+  const due = await findDueDoctorReminders(db, now);
+  for (const note of due) {
+    if (!subs.length) return;
+    // Mark first so a slow or failing push never causes a burst of duplicates.
+    await markDoctorReminderSent(db, note.id, now);
+    await broadcast(db, subs, vapid, {
+      title: `醫生指示提醒（${intervalLabel(note.interval_minutes)}）`,
+      body: note.content,
+      tag: `doctor_note:${note.id}`,
+      data: { type: 'doctor_note', noteId: note.id, url: '/' },
+    });
   }
 }
 

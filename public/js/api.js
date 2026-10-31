@@ -100,6 +100,14 @@
     updateMedication: (id, data) => request('/medications/' + id, { method: 'PUT', body: data }),
     deleteMedication: (id) => request('/medications/' + id, { method: 'DELETE' }),
 
+    // ---- Doctor's instructions (醫生指示) ----
+    getDoctorNotes: (params) => request('/doctornotes?' + new URLSearchParams(params || {}).toString()),
+    createDoctorNote: (data) => request('/doctornotes', { method: 'POST', body: data }),
+    updateDoctorNote: (id, data) => request('/doctornotes/' + id, { method: 'PUT', body: data }),
+    deleteDoctorNote: (id) => request('/doctornotes/' + id, { method: 'DELETE' }),
+    startDoctorReminder: (id, data) => request('/doctornotes/' + id + '/reminder', { method: 'PUT', body: data }),
+    stopDoctorReminder: (id) => request('/doctornotes/' + id + '/reminder', { method: 'DELETE' }),
+
     // ---- Timeline ----
     getTimeline: (babyId, params) => {
       const q = new URLSearchParams({ baby_id: babyId, ...params }).toString();

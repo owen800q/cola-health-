@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { ensureMedicationSchema } from '../lib/medication-schema';
+import { ensureDoctorNoteSchema } from '../lib/doctor-note-schema';
 import type { Bindings } from '../index';
 
 export const timelineRoutes = new Hono<{ Bindings: Bindings }>();
@@ -7,11 +8,11 @@ export const timelineRoutes = new Hono<{ Bindings: Bindings }>();
 // GET /api/timeline?date=YYYY-MM-DD or ?from=ISO&to=ISO
 timelineRoutes.get('/', async (c) => {
   const db = c.env.DB;
-  await ensureMedicationSchema(db);
+  await Promise.all([ensureMedicationSchema(db), ensureDoctorNoteSchema(db)]);
   const from = c.req.query('from');
   const to = c.req.query('to');
 
-  let feedQ: string, diaperQ: string, sleepQ: string, tempQ: string, solidQ: string, medicationQ: string;
+  let feedQ: string, diaperQ: string, sleepQ: string, tempQ: string, solidQ: string, medicationQ: string, doctorQ: string;
   let binds: string[];
 
   if (from && to) {
@@ -22,6 +23,7 @@ timelineRoutes.get('/', async (c) => {
     tempQ = "SELECT id, time, temperature, method, fever, note, 'temperature' as record_type FROM temperatures WHERE time >= ? AND time <= ? ORDER BY time DESC";
     solidQ = "SELECT id, time, name, category, texture, first_try, amount, reaction, abnormal, symptoms, note, 'solidfood' as record_type FROM solid_foods WHERE time >= ? AND time <= ? ORDER BY time DESC";
     medicationQ = "SELECT *, 'medication' as record_type FROM medications WHERE time >= ? AND time <= ? ORDER BY time DESC";
+    doctorQ = "SELECT id, time, content, interval_minutes, remind_from, remind_until, 'doctor_note' as record_type FROM doctor_notes WHERE time >= ? AND time <= ? ORDER BY time DESC";
     binds = [from, to];
   } else {
     const date = c.req.query('date') || new Date().toISOString().split('T')[0];
@@ -31,16 +33,18 @@ timelineRoutes.get('/', async (c) => {
     tempQ = "SELECT id, time, temperature, method, fever, note, 'temperature' as record_type FROM temperatures WHERE date(time) = ? ORDER BY time DESC";
     solidQ = "SELECT id, time, name, category, texture, first_try, amount, reaction, abnormal, symptoms, note, 'solidfood' as record_type FROM solid_foods WHERE date(time) = ? ORDER BY time DESC";
     medicationQ = "SELECT *, 'medication' as record_type FROM medications WHERE date(time) = ? ORDER BY time DESC";
+    doctorQ = "SELECT id, time, content, interval_minutes, remind_from, remind_until, 'doctor_note' as record_type FROM doctor_notes WHERE date(time) = ? ORDER BY time DESC";
     binds = [date];
   }
 
-  const [feeds, diapers, sleeps, temps, solids, medications] = await Promise.all([
+  const [feeds, diapers, sleeps, temps, solids, medications, doctorNotes] = await Promise.all([
     db.prepare(feedQ).bind(...binds).all(),
     db.prepare(diaperQ).bind(...binds).all(),
     db.prepare(sleepQ).bind(...binds).all(),
     db.prepare(tempQ).bind(...binds).all().catch(() => ({ results: [] })),
     db.prepare(solidQ).bind(...binds).all().catch(() => ({ results: [] })),
     db.prepare(medicationQ).bind(...binds).all(),
+    db.prepare(doctorQ).bind(...binds).all(),
   ]);
 
   // Merge and sort by time DESC
@@ -51,6 +55,7 @@ timelineRoutes.get('/', async (c) => {
     ...temps.results,
     ...solids.results,
     ...medications.results,
+    ...doctorNotes.results,
   ].sort((a: any, b: any) => {
     const ta = new Date(a.time).getTime();
     const tb = new Date(b.time).getTime();
