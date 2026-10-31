@@ -2119,19 +2119,33 @@ const app = createApp({
 
     // ===== SWIPE TO DELETE =====
     let swX0 = 0;
+    // Row swipe-to-delete. Lock to an axis on first movement so vertical
+    // drags scroll the page normally; only block scrolling for horizontal swipes.
+    let swY0 = 0, swAxis = null;
     function swStart(e) {
       swX0 = e.touches[0].clientX;
+      swY0 = e.touches[0].clientY;
+      swAxis = null;
       const el = e.currentTarget;
       el.classList.add('swiping');
       document.querySelectorAll('.sw-c.open').forEach(o => { if (o !== el) { o.style.transform = ''; o.classList.remove('open'); } });
     }
     function swMove(e) {
       const dx = e.touches[0].clientX - swX0;
+      const dy = e.touches[0].clientY - swY0;
+      if (!swAxis) {
+        if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+        swAxis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+      }
+      if (swAxis !== 'x') return;
+      if (e.cancelable) e.preventDefault();
       if (dx < 0) e.currentTarget.style.transform = 'translateX(' + Math.max(dx, -80) + 'px)';
     }
     function swEnd(e) {
       const el = e.currentTarget;
       el.classList.remove('swiping');
+      if (swAxis !== 'x') { swAxis = null; return; }
+      swAxis = null;
       const dx = e.changedTouches[0].clientX - swX0;
       if (dx < -40) { el.style.transform = 'translateX(-80px)'; el.classList.add('open'); }
       else { el.style.transform = ''; el.classList.remove('open'); }
@@ -2568,7 +2582,7 @@ const app = createApp({
     </div>
     <div class="cs" v-if="feedHistory.length">
       <div class="sw-row" v-for="item in feedHistory" :key="item.id">
-        <div class="sw-c" @touchstart="swStart" @touchmove.prevent="swMove" @touchend="swEnd">
+        <div class="sw-c" @touchstart="swStart" @touchmove="swMove" @touchend="swEnd">
           <div class="cl" @click="editFeed(item)">
             <div class="ri milk"><svg><use href="#i-milk"/></svg></div>
             <div class="cb">
@@ -2595,7 +2609,7 @@ const app = createApp({
     </div>
     <div class="cs" v-if="diaperHistory.length">
       <div class="sw-row" v-for="item in diaperHistory" :key="item.id">
-        <div class="sw-c" @touchstart="swStart" @touchmove.prevent="swMove" @touchend="swEnd">
+        <div class="sw-c" @touchstart="swStart" @touchmove="swMove" @touchend="swEnd">
           <div class="cl" @click="editDiaper(item)">
             <div class="ri" :class="diaperItemCls(item)"><svg><use :href="'#' + diaperItemIcon(item)"/></svg></div>
             <div class="cb">
@@ -2634,7 +2648,7 @@ const app = createApp({
     <div class="st">今日睡眠記錄</div>
     <div class="cs" v-if="sleepHistory.length">
       <div class="sw-row" v-for="item in sleepHistory" :key="item.id">
-        <div class="sw-c" @touchstart="swStart" @touchmove.prevent="swMove" @touchend="swEnd">
+        <div class="sw-c" @touchstart="swStart" @touchmove="swMove" @touchend="swEnd">
           <div class="cl" @click="editSleep(item)">
             <div class="ri slp"><svg><use :href="item.end_time ? '#i-sun' : '#i-moon'"/></svg></div>
             <div class="cb">
@@ -2822,7 +2836,7 @@ const app = createApp({
       </div>
       <div class="cs" v-if="sfRecords.length">
         <div class="sw-row" v-for="r in sfRecords" :key="r.id">
-          <div class="sw-c" @touchstart="swStart" @touchmove.prevent="swMove" @touchend="swEnd">
+          <div class="sw-c" @touchstart="swStart" @touchmove="swMove" @touchend="swEnd">
             <div class="cl" @click="openSolidForm(r)">
               <div class="ri food"><svg><use href="#i-food"/></svg></div>
               <div class="cb">
@@ -2964,7 +2978,7 @@ const app = createApp({
     <div class="empty-state" v-else-if="medicationError" role="alert"><p>{{ medicationError }}</p><button class="bp-outline" @click="loadMedicationHistory">重試</button></div>
     <div class="cs" v-else-if="medicationHistory.length">
       <div class="sw-row" v-for="item in medicationHistory" :key="item.id">
-        <div class="sw-c" @touchstart="swStart" @touchmove.prevent="swMove" @touchend="swEnd">
+        <div class="sw-c" @touchstart="swStart" @touchmove="swMove" @touchend="swEnd">
           <div class="cl" @click="openMedicationForm(item)">
             <div class="ri medication"><svg><use href="#i-pill"/></svg></div>
             <div class="cb"><div class="ct medication-text">{{ item.name }}</div><div class="cd medication-text" v-if="item.note">{{ item.note }}</div></div>
@@ -3020,7 +3034,7 @@ const app = createApp({
     <div class="st" v-if="tempHistory.length">{{ isToday ? '今日' : '當日' }}體溫記錄</div>
     <div class="cs" v-if="tempHistory.length">
       <div class="sw-row" v-for="item in tempHistory" :key="item.id">
-        <div class="sw-c" @touchstart="swStart" @touchmove.prevent="swMove" @touchend="swEnd">
+        <div class="sw-c" @touchstart="swStart" @touchmove="swMove" @touchend="swEnd">
           <div class="cl" @click="editTemp(item)">
             <div class="ri" :class="item.fever ? 'temp-fever' : 'temp'"><svg><use href="#i-thermo"/></svg></div>
             <div class="cb">
