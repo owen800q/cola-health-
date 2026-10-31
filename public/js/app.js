@@ -1408,7 +1408,7 @@ const app = createApp({
         // Build recent items from timeline (already includes temperatures)
         var allItems = [...(timeline || [])]
           .sort((a, b) => new Date(b.time) - new Date(a.time));
-        recentItems.value = allItems.slice(0, 10).map(e => {
+        recentItems.value = allItems.map(e => {
           let icon = 'milk', cls = 'milk', title = '', detail = '', vol = '';
           if (e.record_type === 'feed') {
             icon = 'i-milk'; cls = 'milk';
