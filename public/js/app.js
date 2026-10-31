@@ -1862,7 +1862,11 @@ const app = createApp({
       saving.value = true;
       showLoading('儲存中...');
       try {
-        const now = new Date();
+        // Editing keeps the record's original date; a new record goes on the
+        // currently viewed day (= today unless the user navigated back).
+        const now = (editingId.value && editingType.value === 'temperature' && tempEditBaseTime)
+          ? new Date(tempEditBaseTime)
+          : new Date(viewDate.value);
         if (tempTime.value) {
           const [h, m] = tempTime.value.split(':');
           now.setHours(parseInt(h), parseInt(m), 0, 0);
@@ -1907,7 +1911,9 @@ const app = createApp({
       finally { saving.value = false; }
     }
 
+    let tempEditBaseTime = null;
     function editTemp(item) {
+      tempEditBaseTime = item.time;
       editingId.value = item.id;
       editingType.value = 'temperature';
       const d = new Date(item.time);
@@ -2003,6 +2009,8 @@ const app = createApp({
       else if (p === 3) loadSleepHistory();
       else if (p === 5) loadSolidFoods();
       else if (p === 7) loadMedicationHistory();
+      // Temperature lives in a sub-page overlay, not a main page
+      if (activeSub.value === 'at') loadTempHistory();
     }
 
     // Date picker (tap the date label to jump to any date)
@@ -2404,7 +2412,7 @@ const app = createApp({
       // Baby
       baby, babyName, babyAge, babyBirthday, daysSinceBirth, avatarUrl, pickAvatar,
       // Home
-      homeStats, recentItems, nextFeedStr, nextFeedMs, nextFeedProgress, nextFeedOverdue, lastFeedAgo, viewDateStr, prevDay, nextDay,
+      homeStats, recentItems, nextFeedStr, nextFeedMs, nextFeedProgress, nextFeedOverdue, lastFeedAgo, viewDateStr, isToday, prevDay, nextDay,
       datePickerShow, datePickerMin, datePickerMax, datePickerDefault, openDatePicker, onDatePicked,
       // Edit
       editingId, editingType, editFeed, editDiaper, editSleep, editTemp, editTimelineItem, saving,
@@ -2990,6 +2998,7 @@ const app = createApp({
   <!-- ===== SUB: TEMPERATURE ===== -->
   <div class="sub" :class="{active: activeSub === 'at'}" @touchstart="subSwipeStart" @touchmove="subSwipeMove" @touchend="subSwipeEnd">
     <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">{{ editingType === 'temperature' ? '編輯體溫記錄' : '體溫記錄' }}</span><div class="nb-ph"></div></div>
+    <div class="dn" v-if="editingType !== 'temperature'"><span class="da" @click="prevDay"><svg><use href="#i-back"/></svg></span><span class="dt" @click="openDatePicker">{{ viewDateStr }}</span><span class="da" @click="nextDay"><svg><use href="#i-arrow"/></svg></span></div>
     <div class="sb">
       <div class="sbi"><span class="sbv" style="color:var(--red)">{{ tempSummary.max }}</span><span class="sbl">最高°C</span></div>
       <div class="sbi"><span class="sbv" style="color:var(--blue)">{{ tempSummary.min }}</span><span class="sbl">最低°C</span></div>
@@ -3008,7 +3017,7 @@ const app = createApp({
     </div>
     <div class="fc" style="margin-top:16px"><div class="fi"><span class="fl">備註</span><input class="fv" type="text" placeholder="例如：食咗退燒藥" v-model="tempNotes"></div></div>
     <div class="ba"><a href="javascript:;" class="bp" :class="{disabled: saving}" @click="saveTemp">{{ editingType === 'temperature' ? '更新記錄' : '儲存記錄' }}</a></div>
-    <div class="st" v-if="tempHistory.length">今日體溫記錄</div>
+    <div class="st" v-if="tempHistory.length">{{ isToday ? '今日' : '當日' }}體溫記錄</div>
     <div class="cs" v-if="tempHistory.length">
       <div class="sw-row" v-for="item in tempHistory" :key="item.id">
         <div class="sw-c" @touchstart="swStart" @touchmove.prevent="swMove" @touchend="swEnd">
