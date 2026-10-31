@@ -1862,7 +1862,11 @@ const app = createApp({
       saving.value = true;
       showLoading('儲存中...');
       try {
-        const now = new Date();
+        // Editing keeps the record's original date; a new record goes on the
+        // currently viewed day (= today unless the user navigated back).
+        const now = (editingId.value && editingType.value === 'temperature' && tempEditBaseTime)
+          ? new Date(tempEditBaseTime)
+          : new Date(viewDate.value);
         if (tempTime.value) {
           const [h, m] = tempTime.value.split(':');
           now.setHours(parseInt(h), parseInt(m), 0, 0);
@@ -1907,7 +1911,9 @@ const app = createApp({
       finally { saving.value = false; }
     }
 
+    let tempEditBaseTime = null;
     function editTemp(item) {
+      tempEditBaseTime = item.time;
       editingId.value = item.id;
       editingType.value = 'temperature';
       const d = new Date(item.time);
@@ -2003,6 +2009,8 @@ const app = createApp({
       else if (p === 3) loadSleepHistory();
       else if (p === 5) loadSolidFoods();
       else if (p === 7) loadMedicationHistory();
+      // Temperature lives in a sub-page overlay, not a main page
+      if (activeSub.value === 'at') loadTempHistory();
     }
 
     // Date picker (tap the date label to jump to any date)
@@ -2111,19 +2119,33 @@ const app = createApp({
 
     // ===== SWIPE TO DELETE =====
     let swX0 = 0;
+    // Row swipe-to-delete. Lock to an axis on first movement so vertical
+    // drags scroll the page normally; only block scrolling for horizontal swipes.
+    let swY0 = 0, swAxis = null;
     function swStart(e) {
       swX0 = e.touches[0].clientX;
+      swY0 = e.touches[0].clientY;
+      swAxis = null;
       const el = e.currentTarget;
       el.classList.add('swiping');
       document.querySelectorAll('.sw-c.open').forEach(o => { if (o !== el) { o.style.transform = ''; o.classList.remove('open'); } });
     }
     function swMove(e) {
       const dx = e.touches[0].clientX - swX0;
+      const dy = e.touches[0].clientY - swY0;
+      if (!swAxis) {
+        if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+        swAxis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+      }
+      if (swAxis !== 'x') return;
+      if (e.cancelable) e.preventDefault();
       if (dx < 0) e.currentTarget.style.transform = 'translateX(' + Math.max(dx, -80) + 'px)';
     }
     function swEnd(e) {
       const el = e.currentTarget;
       el.classList.remove('swiping');
+      if (swAxis !== 'x') { swAxis = null; return; }
+      swAxis = null;
       const dx = e.changedTouches[0].clientX - swX0;
       if (dx < -40) { el.style.transform = 'translateX(-80px)'; el.classList.add('open'); }
       else { el.style.transform = ''; el.classList.remove('open'); }
@@ -2404,7 +2426,7 @@ const app = createApp({
       // Baby
       baby, babyName, babyAge, babyBirthday, daysSinceBirth, avatarUrl, pickAvatar,
       // Home
-      homeStats, recentItems, nextFeedStr, nextFeedMs, nextFeedProgress, nextFeedOverdue, lastFeedAgo, viewDateStr, prevDay, nextDay,
+      homeStats, recentItems, nextFeedStr, nextFeedMs, nextFeedProgress, nextFeedOverdue, lastFeedAgo, viewDateStr, isToday, prevDay, nextDay,
       datePickerShow, datePickerMin, datePickerMax, datePickerDefault, openDatePicker, onDatePicked,
       // Edit
       editingId, editingType, editFeed, editDiaper, editSleep, editTemp, editTimelineItem, saving,
@@ -2560,7 +2582,7 @@ const app = createApp({
     </div>
     <div class="cs" v-if="feedHistory.length">
       <div class="sw-row" v-for="item in feedHistory" :key="item.id">
-        <div class="sw-c" @touchstart="swStart" @touchmove.prevent="swMove" @touchend="swEnd">
+        <div class="sw-c" @touchstart="swStart" @touchmove="swMove" @touchend="swEnd">
           <div class="cl" @click="editFeed(item)">
             <div class="ri milk"><svg><use href="#i-milk"/></svg></div>
             <div class="cb">
@@ -2587,7 +2609,7 @@ const app = createApp({
     </div>
     <div class="cs" v-if="diaperHistory.length">
       <div class="sw-row" v-for="item in diaperHistory" :key="item.id">
-        <div class="sw-c" @touchstart="swStart" @touchmove.prevent="swMove" @touchend="swEnd">
+        <div class="sw-c" @touchstart="swStart" @touchmove="swMove" @touchend="swEnd">
           <div class="cl" @click="editDiaper(item)">
             <div class="ri" :class="diaperItemCls(item)"><svg><use :href="'#' + diaperItemIcon(item)"/></svg></div>
             <div class="cb">
@@ -2626,7 +2648,7 @@ const app = createApp({
     <div class="st">今日睡眠記錄</div>
     <div class="cs" v-if="sleepHistory.length">
       <div class="sw-row" v-for="item in sleepHistory" :key="item.id">
-        <div class="sw-c" @touchstart="swStart" @touchmove.prevent="swMove" @touchend="swEnd">
+        <div class="sw-c" @touchstart="swStart" @touchmove="swMove" @touchend="swEnd">
           <div class="cl" @click="editSleep(item)">
             <div class="ri slp"><svg><use :href="item.end_time ? '#i-sun' : '#i-moon'"/></svg></div>
             <div class="cb">
@@ -2814,7 +2836,7 @@ const app = createApp({
       </div>
       <div class="cs" v-if="sfRecords.length">
         <div class="sw-row" v-for="r in sfRecords" :key="r.id">
-          <div class="sw-c" @touchstart="swStart" @touchmove.prevent="swMove" @touchend="swEnd">
+          <div class="sw-c" @touchstart="swStart" @touchmove="swMove" @touchend="swEnd">
             <div class="cl" @click="openSolidForm(r)">
               <div class="ri food"><svg><use href="#i-food"/></svg></div>
               <div class="cb">
@@ -2956,7 +2978,7 @@ const app = createApp({
     <div class="empty-state" v-else-if="medicationError" role="alert"><p>{{ medicationError }}</p><button class="bp-outline" @click="loadMedicationHistory">重試</button></div>
     <div class="cs" v-else-if="medicationHistory.length">
       <div class="sw-row" v-for="item in medicationHistory" :key="item.id">
-        <div class="sw-c" @touchstart="swStart" @touchmove.prevent="swMove" @touchend="swEnd">
+        <div class="sw-c" @touchstart="swStart" @touchmove="swMove" @touchend="swEnd">
           <div class="cl" @click="openMedicationForm(item)">
             <div class="ri medication"><svg><use href="#i-pill"/></svg></div>
             <div class="cb"><div class="ct medication-text">{{ item.name }}</div><div class="cd medication-text" v-if="item.note">{{ item.note }}</div></div>
@@ -2990,6 +3012,7 @@ const app = createApp({
   <!-- ===== SUB: TEMPERATURE ===== -->
   <div class="sub" :class="{active: activeSub === 'at'}" @touchstart="subSwipeStart" @touchmove="subSwipeMove" @touchend="subSwipeEnd">
     <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">{{ editingType === 'temperature' ? '編輯體溫記錄' : '體溫記錄' }}</span><div class="nb-ph"></div></div>
+    <div class="dn" v-if="editingType !== 'temperature'"><span class="da" @click="prevDay"><svg><use href="#i-back"/></svg></span><span class="dt" @click="openDatePicker">{{ viewDateStr }}</span><span class="da" @click="nextDay"><svg><use href="#i-arrow"/></svg></span></div>
     <div class="sb">
       <div class="sbi"><span class="sbv" style="color:var(--red)">{{ tempSummary.max }}</span><span class="sbl">最高°C</span></div>
       <div class="sbi"><span class="sbv" style="color:var(--blue)">{{ tempSummary.min }}</span><span class="sbl">最低°C</span></div>
@@ -3008,10 +3031,10 @@ const app = createApp({
     </div>
     <div class="fc" style="margin-top:16px"><div class="fi"><span class="fl">備註</span><input class="fv" type="text" placeholder="例如：食咗退燒藥" v-model="tempNotes"></div></div>
     <div class="ba"><a href="javascript:;" class="bp" :class="{disabled: saving}" @click="saveTemp">{{ editingType === 'temperature' ? '更新記錄' : '儲存記錄' }}</a></div>
-    <div class="st" v-if="tempHistory.length">今日體溫記錄</div>
+    <div class="st" v-if="tempHistory.length">{{ isToday ? '今日' : '當日' }}體溫記錄</div>
     <div class="cs" v-if="tempHistory.length">
       <div class="sw-row" v-for="item in tempHistory" :key="item.id">
-        <div class="sw-c" @touchstart="swStart" @touchmove.prevent="swMove" @touchend="swEnd">
+        <div class="sw-c" @touchstart="swStart" @touchmove="swMove" @touchend="swEnd">
           <div class="cl" @click="editTemp(item)">
             <div class="ri" :class="item.fever ? 'temp-fever' : 'temp'"><svg><use href="#i-thermo"/></svg></div>
             <div class="cb">

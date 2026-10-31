@@ -78,7 +78,7 @@ body::after { content: ''; position: fixed; bottom: 0; left: 0; right: 0; height
 /* Swipe to delete */
 .sw-row { position: relative; overflow: hidden; }
 .sw-row:last-child .cl { border-bottom: none; }
-.sw-c { position: relative; z-index: 1; background: var(--card); transition: transform 0.25s ease; }
+.sw-c { position: relative; z-index: 1; touch-action: pan-y; background: var(--card); transition: transform 0.25s ease; }
 .sw-c.swiping { transition: none; }
 .sw-del { position: absolute; right: 0; top: 0; bottom: 0; width: 80px; display: flex; align-items: center; justify-content: center; background: var(--red); color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; }
 .cl .ci { width: 22px; margin-right: 12px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: var(--t2); }
