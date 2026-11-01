@@ -257,12 +257,24 @@ const app = createApp({
     const lullabyDuration = ref('8:00');
     const lullabyVolume = ref(0.6);
     const lullabyLoop = ref(localStorage.getItem('lullabyLoop') !== '0');
+    const lullabyRoute = ref(LullabySources.ROUTES.includes(localStorage.getItem('lullabyRoute')) ? localStorage.getItem('lullabyRoute') : 'auto');
+    const lullabyProxy = ref(localStorage.getItem('lullabyProxyUrl') || '');
+    const lullabyLoading = ref(false);
     let lullabyAudio = null;
     let lullabyAnimFrame = null;
+    let lullabySrcList = [];
+    let lullabySrcIdx = 0;
+    let lullabyStallTimer = null;
+    const LULLABY_STALL_MS = 8000;
+
+    function clearLullabyStall() {
+      if (lullabyStallTimer) { clearTimeout(lullabyStallTimer); lullabyStallTimer = null; }
+    }
 
     function initLullabyAudio() {
       if (!lullabyAudio) {
-        lullabyAudio = new Audio('/sleeping_song.mp3');
+        lullabyAudio = new Audio();
+        lullabyAudio.preload = 'none';
         lullabyAudio.volume = lullabyVolume.value;
         lullabyAudio.loop = lullabyLoop.value;
         lullabyAudio.addEventListener('loadedmetadata', () => {
@@ -270,6 +282,15 @@ const app = createApp({
           const s = Math.floor(lullabyAudio.duration % 60);
           lullabyDuration.value = m + ':' + pad(s);
         });
+        lullabyAudio.addEventListener('playing', () => {
+          clearLullabyStall();
+          lullabyLoading.value = false;
+          lullabyPlaying.value = true;
+          if (lullabyRoute.value === 'auto') localStorage.setItem('lullabyLastGood', lullabySrcList[lullabySrcIdx] || '');
+          if (!lullabyAnimFrame) updateLullabyProgress();
+        });
+        // A source that fails (blocked, 403, timeout) hands over to the next one.
+        lullabyAudio.addEventListener('error', () => { if (lullabyLoading.value) nextLullabySource(); });
         lullabyAudio.addEventListener('ended', () => {
           lullabyPlaying.value = false;
           lullabyProgress.value = 0;
@@ -277,6 +298,78 @@ const app = createApp({
           if (lullabyAnimFrame) { cancelAnimationFrame(lullabyAnimFrame); lullabyAnimFrame = null; }
         });
       }
+      if (!lullabySrcList.length) {
+        lullabySrcList = LullabySources.sources({
+          origin: location.origin, route: lullabyRoute.value, proxy: lullabyProxy.value,
+          lastGood: localStorage.getItem('lullabyLastGood'),
+        });
+        lullabySrcIdx = 0;
+      }
+    }
+
+    function playLullabySource() {
+      const src = lullabySrcList[lullabySrcIdx];
+      lullabyLoading.value = true;
+      if (lullabyAudio.src !== src) { lullabyAudio.src = src; lullabyAudio.load(); }
+      clearLullabyStall();
+      // No sound after a while: try the next source, unless this is the last one.
+      if (lullabySrcIdx < lullabySrcList.length - 1) {
+        lullabyStallTimer = setTimeout(nextLullabySource, LULLABY_STALL_MS);
+      }
+      lullabyAudio.play().catch((err) => {
+        if (err && err.name === 'NotAllowedError') {
+          clearLullabyStall();
+          lullabyLoading.value = false;
+          showToast('無法播放音樂');
+        }
+        // Other failures also fire the 'error' event, which moves on.
+      });
+    }
+
+    function nextLullabySource() {
+      clearLullabyStall();
+      if (!lullabyLoading.value) return;
+      if (lullabySrcIdx < lullabySrcList.length - 1) {
+        lullabySrcIdx++;
+        playLullabySource();
+      } else {
+        lullabyLoading.value = false;
+        lullabyAudio.pause();
+        localStorage.removeItem('lullabyLastGood');
+        showToast('播放失敗，請試其他線路');
+      }
+    }
+
+    function resetLullabySource() {
+      if (lullabyAudio) {
+        lullabyAudio.pause();
+        lullabyAudio.removeAttribute('src');
+        lullabyAudio.load();
+      }
+      clearLullabyStall();
+      if (lullabyAnimFrame) { cancelAnimationFrame(lullabyAnimFrame); lullabyAnimFrame = null; }
+      lullabySrcList = [];
+      lullabyLoading.value = false;
+      lullabyPlaying.value = false;
+      lullabyProgress.value = 0;
+      lullabyCurrentTime.value = '0:00';
+    }
+
+    function setLullabyRoute(route) {
+      if (route === 'proxy') {
+        const input = window.prompt('輸入中國代理伺服器地址（同 Bilibili 電視 App 一樣，例如 https://example.com:9998/token）。留空即取消。', lullabyProxy.value);
+        if (input === null) return;
+        const proxy = LullabySources.normalizeProxy(input);
+        if (input.trim() && !proxy) { showToast('地址無效'); return; }
+        lullabyProxy.value = proxy;
+        if (proxy) localStorage.setItem('lullabyProxyUrl', proxy);
+        else { localStorage.removeItem('lullabyProxyUrl'); route = 'auto'; }
+      }
+      lullabyRoute.value = route;
+      localStorage.setItem('lullabyRoute', route);
+      localStorage.removeItem('lullabyLastGood');
+      resetLullabySource();
+      showToast('播放線路：' + LullabySources.LABELS[route]);
     }
 
     function updateLullabyProgress() {
@@ -288,20 +381,21 @@ const app = createApp({
         const s = Math.floor(cur % 60);
         lullabyCurrentTime.value = m + ':' + pad(s);
         lullabyAnimFrame = requestAnimationFrame(updateLullabyProgress);
+      } else {
+        lullabyAnimFrame = null;
       }
     }
 
     function toggleLullaby() {
       initLullabyAudio();
-      if (lullabyPlaying.value) {
+      if (lullabyPlaying.value || lullabyLoading.value) {
         lullabyAudio.pause();
+        clearLullabyStall();
+        lullabyLoading.value = false;
         lullabyPlaying.value = false;
         if (lullabyAnimFrame) { cancelAnimationFrame(lullabyAnimFrame); lullabyAnimFrame = null; }
       } else {
-        lullabyAudio.play().then(() => {
-          lullabyPlaying.value = true;
-          updateLullabyProgress();
-        }).catch(() => { showToast('無法播放音樂'); });
+        playLullabySource();
       }
     }
 
@@ -2490,6 +2584,7 @@ const app = createApp({
     onUnmounted(() => {
       if (sleepTimer) clearInterval(sleepTimer);
       if (_nowTimer) clearInterval(_nowTimer);
+      clearLullabyStall();
       if (lullabyAudio) { lullabyAudio.pause(); lullabyAudio = null; }
       if (lullabyAnimFrame) cancelAnimationFrame(lullabyAnimFrame);
       document.removeEventListener('visibilitychange', onVisibilityChange);
@@ -2536,6 +2631,7 @@ const app = createApp({
       // Lullaby player
       lullabyPlaying, lullabyProgress, lullabyCurrentTime, lullabyDuration,
       lullabyVolume, lullabyLoop, toggleLullaby, toggleLullabyLoop, seekLullaby, setLullabyVolume,
+      lullabyRoute, lullabyLoading, lullabyRouteLabels: LullabySources.LABELS, lullabyRoutes: LullabySources.ROUTES, setLullabyRoute,
       // Medication
       medicationHistory, medicationLoading, medicationError, medicationUnits, medicationForm,
       openMedicationScreen, openMedicationForm, saveMedication, deleteMedication, loadMedicationHistory,
@@ -2759,6 +2855,10 @@ const app = createApp({
             <div class="lp-vol-fill" :style="{width: (lullabyVolume * 100) + '%'}"></div>
           </div>
         </div>
+      </div>
+      <div class="lp-route">
+        <span class="lp-route-l">{{ lullabyLoading ? '載入中…' : '線路' }}</span>
+        <button v-for="r in lullabyRoutes" :key="r" :class="{on: lullabyRoute === r}" @click="setLullabyRoute(r)">{{ lullabyRouteLabels[r] }}</button>
       </div>
     </div>
 
