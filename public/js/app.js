@@ -250,6 +250,81 @@ const app = createApp({
     const sleepQuality = ref('好 · 瞓得穩');
     const sleepNotes = ref('');
 
+    // Sleeping song player
+    const lullabyPlaying = ref(false);
+    const lullabyProgress = ref(0);
+    const lullabyCurrentTime = ref('0:00');
+    const lullabyDuration = ref('8:00');
+    const lullabyVolume = ref(0.6);
+    let lullabyAudio = null;
+    let lullabyAnimFrame = null;
+
+    function initLullabyAudio() {
+      if (!lullabyAudio) {
+        lullabyAudio = new Audio('/sleeping_song.mp3');
+        lullabyAudio.volume = lullabyVolume.value;
+        lullabyAudio.addEventListener('loadedmetadata', () => {
+          const m = Math.floor(lullabyAudio.duration / 60);
+          const s = Math.floor(lullabyAudio.duration % 60);
+          lullabyDuration.value = m + ':' + pad(s);
+        });
+        lullabyAudio.addEventListener('ended', () => {
+          lullabyPlaying.value = false;
+          lullabyProgress.value = 0;
+          lullabyCurrentTime.value = '0:00';
+          if (lullabyAnimFrame) { cancelAnimationFrame(lullabyAnimFrame); lullabyAnimFrame = null; }
+        });
+      }
+    }
+
+    function updateLullabyProgress() {
+      if (lullabyAudio && lullabyPlaying.value) {
+        const cur = lullabyAudio.currentTime;
+        const dur = lullabyAudio.duration || 480;
+        lullabyProgress.value = (cur / dur) * 100;
+        const m = Math.floor(cur / 60);
+        const s = Math.floor(cur % 60);
+        lullabyCurrentTime.value = m + ':' + pad(s);
+        lullabyAnimFrame = requestAnimationFrame(updateLullabyProgress);
+      }
+    }
+
+    function toggleLullaby() {
+      initLullabyAudio();
+      if (lullabyPlaying.value) {
+        lullabyAudio.pause();
+        lullabyPlaying.value = false;
+        if (lullabyAnimFrame) { cancelAnimationFrame(lullabyAnimFrame); lullabyAnimFrame = null; }
+      } else {
+        lullabyAudio.play().then(() => {
+          lullabyPlaying.value = true;
+          updateLullabyProgress();
+        }).catch(() => { showToast('無法播放音樂'); });
+      }
+    }
+
+    function seekLullaby(e) {
+      initLullabyAudio();
+      const bar = e.currentTarget;
+      const rect = bar.getBoundingClientRect();
+      const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      if (lullabyAudio.duration) {
+        lullabyAudio.currentTime = pct * lullabyAudio.duration;
+        lullabyProgress.value = pct * 100;
+        const m = Math.floor(lullabyAudio.currentTime / 60);
+        const s = Math.floor(lullabyAudio.currentTime % 60);
+        lullabyCurrentTime.value = m + ':' + pad(s);
+      }
+    }
+
+    function setLullabyVolume(e) {
+      const bar = e.currentTarget;
+      const rect = bar.getBoundingClientRect();
+      const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      lullabyVolume.value = pct;
+      if (lullabyAudio) lullabyAudio.volume = pct;
+    }
+
     // Medication records
     const medicationHistory = ref([]);
     const medicationLoading = ref(false);
@@ -2406,6 +2481,8 @@ const app = createApp({
     onUnmounted(() => {
       if (sleepTimer) clearInterval(sleepTimer);
       if (_nowTimer) clearInterval(_nowTimer);
+      if (lullabyAudio) { lullabyAudio.pause(); lullabyAudio = null; }
+      if (lullabyAnimFrame) cancelAnimationFrame(lullabyAnimFrame);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     });
 
@@ -2447,6 +2524,9 @@ const app = createApp({
       toggleSleep, saveManualSleep, deleteSleep,
       manualSleepStart, manualSleepEnd, sleepQuality, sleepNotes,
       sleepSummaryData,
+      // Lullaby player
+      lullabyPlaying, lullabyProgress, lullabyCurrentTime, lullabyDuration,
+      lullabyVolume, toggleLullaby, seekLullaby, setLullabyVolume,
       // Medication
       medicationHistory, medicationLoading, medicationError, medicationUnits, medicationForm,
       openMedicationScreen, openMedicationForm, saveMedication, deleteMedication, loadMedicationHistory,
@@ -2639,6 +2719,37 @@ const app = createApp({
         <span>{{ isSleeping ? '醒咗' : '瞓覺' }}</span>
       </button>
     </div>
+
+    <!-- Lullaby Player -->
+    <div class="lullaby-player">
+      <div class="lp-header">
+        <svg class="lp-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+        <span class="lp-title">搖籃曲</span>
+        <span class="lp-subtitle">ABC Song · Bedtime Lullabies</span>
+      </div>
+      <div class="lp-controls">
+        <button class="lp-play" @click="toggleLullaby" :class="{playing: lullabyPlaying}">
+          <svg v-if="!lullabyPlaying" viewBox="0 0 24 24" fill="currentColor"><polygon points="6,3 20,12 6,21"/></svg>
+          <svg v-else viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="3" width="4" height="18"/><rect x="15" y="3" width="4" height="18"/></svg>
+        </button>
+        <div class="lp-track">
+          <div class="lp-bar" @click="seekLullaby($event)">
+            <div class="lp-fill" :style="{width: lullabyProgress + '%'}"></div>
+          </div>
+          <div class="lp-times">
+            <span>{{ lullabyCurrentTime }}</span>
+            <span>{{ lullabyDuration }}</span>
+          </div>
+        </div>
+        <div class="lp-vol" @click="setLullabyVolume($event)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;flex-shrink:0"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path v-if="lullabyVolume > 0.3" d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path v-if="lullabyVolume > 0.6" d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+          <div class="lp-vol-bar">
+            <div class="lp-vol-fill" :style="{width: (lullabyVolume * 100) + '%'}"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="dn"><span class="da" @click="prevDay"><svg><use href="#i-back"/></svg></span><span class="dt" @click="openDatePicker">{{ viewDateStr }}</span><span class="da" @click="nextDay"><svg><use href="#i-arrow"/></svg></span></div>
     <div class="sb">
       <div class="sbi"><span class="sbv" style="color:var(--purple)">{{ sleepSummaryData.totalHours }}h</span><span class="sbl">今日總睡眠</span></div>

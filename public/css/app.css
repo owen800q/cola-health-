@@ -212,6 +212,25 @@ label.fi { cursor: pointer; }
 .sleep-big .sb-sleep { background: linear-gradient(135deg, #9B59B6, #8E44AD); }
 .sleep-big .sb-wake { background: linear-gradient(135deg, var(--green), #4CD964); }
 
+/* Lullaby Player */
+.lullaby-player { margin: 0 16px 16px; background: linear-gradient(135deg, #2C1654, #1A0A3E); border-radius: 16px; padding: 16px; color: #fff; }
+.lp-header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.lp-icon { width: 20px; height: 20px; color: #C59CFF; }
+.lp-title { font-size: 15px; font-weight: 600; }
+.lp-subtitle { font-size: 12px; color: rgba(255,255,255,0.5); margin-left: auto; }
+.lp-controls { display: flex; align-items: center; gap: 12px; }
+.lp-play { width: 44px; height: 44px; border-radius: 50%; border: none; background: linear-gradient(135deg, #9B59B6, #8E44AD); color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: transform .2s, box-shadow .2s; box-shadow: 0 2px 8px rgba(155,89,182,0.4); }
+.lp-play:active { transform: scale(0.92); }
+.lp-play.playing { background: linear-gradient(135deg, #E67E22, #D35400); box-shadow: 0 2px 8px rgba(230,126,34,0.4); }
+.lp-play svg { width: 18px; height: 18px; }
+.lp-track { flex: 1; min-width: 0; }
+.lp-bar { height: 6px; background: rgba(255,255,255,0.15); border-radius: 3px; cursor: pointer; position: relative; }
+.lp-fill { height: 100%; background: linear-gradient(90deg, #9B59B6, #C59CFF); border-radius: 3px; transition: width .1s; }
+.lp-times { display: flex; justify-content: space-between; margin-top: 4px; font-size: 11px; color: rgba(255,255,255,0.5); }
+.lp-vol { display: flex; align-items: center; gap: 4px; cursor: pointer; color: rgba(255,255,255,0.6); flex-shrink: 0; }
+.lp-vol-bar { width: 40px; height: 4px; background: rgba(255,255,255,0.15); border-radius: 2px; position: relative; }
+.lp-vol-fill { height: 100%; background: rgba(255,255,255,0.5); border-radius: 2px; }
+
 /* Segmented tabs */
 .seg { display: flex; margin: 16px; background: rgba(0,0,0,0.06); border-radius: 8px; padding: 2px; }
 .seg-btn { flex: 1; text-align: center; font-size: 14px; padding: 8px 4px; border-radius: 6px; cursor: pointer; color: var(--t2); transition: all .2s; }
