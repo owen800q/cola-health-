@@ -227,6 +227,9 @@ label.fi { cursor: pointer; }
 .lp-bar { height: 6px; background: rgba(255,255,255,0.15); border-radius: 3px; cursor: pointer; position: relative; }
 .lp-fill { height: 100%; background: linear-gradient(90deg, #9B59B6, #C59CFF); border-radius: 3px; transition: width .1s; }
 .lp-times { display: flex; justify-content: space-between; margin-top: 4px; font-size: 11px; color: rgba(255,255,255,0.5); }
+.lp-loop { width: 32px; height: 32px; border: none; border-radius: 50%; background: transparent; color: rgba(255,255,255,0.35); cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; padding: 0; }
+.lp-loop svg { width: 18px; height: 18px; }
+.lp-loop.on { color: #C59CFF; background: rgba(197,156,255,0.15); }
 .lp-vol { display: flex; align-items: center; gap: 4px; cursor: pointer; color: rgba(255,255,255,0.6); flex-shrink: 0; }
 .lp-vol-bar { width: 40px; height: 4px; background: rgba(255,255,255,0.15); border-radius: 2px; position: relative; }
 .lp-vol-fill { height: 100%; background: rgba(255,255,255,0.5); border-radius: 2px; }

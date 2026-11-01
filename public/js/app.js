@@ -256,6 +256,7 @@ const app = createApp({
     const lullabyCurrentTime = ref('0:00');
     const lullabyDuration = ref('8:00');
     const lullabyVolume = ref(0.6);
+    const lullabyLoop = ref(localStorage.getItem('lullabyLoop') !== '0');
     let lullabyAudio = null;
     let lullabyAnimFrame = null;
 
@@ -263,6 +264,7 @@ const app = createApp({
       if (!lullabyAudio) {
         lullabyAudio = new Audio('/sleeping_song.mp3');
         lullabyAudio.volume = lullabyVolume.value;
+        lullabyAudio.loop = lullabyLoop.value;
         lullabyAudio.addEventListener('loadedmetadata', () => {
           const m = Math.floor(lullabyAudio.duration / 60);
           const s = Math.floor(lullabyAudio.duration % 60);
@@ -315,6 +317,13 @@ const app = createApp({
         const s = Math.floor(lullabyAudio.currentTime % 60);
         lullabyCurrentTime.value = m + ':' + pad(s);
       }
+    }
+
+    function toggleLullabyLoop() {
+      lullabyLoop.value = !lullabyLoop.value;
+      localStorage.setItem('lullabyLoop', lullabyLoop.value ? '1' : '0');
+      if (lullabyAudio) lullabyAudio.loop = lullabyLoop.value;
+      showToast(lullabyLoop.value ? '循環播放：開' : '循環播放：關');
     }
 
     function setLullabyVolume(e) {
@@ -2526,7 +2535,7 @@ const app = createApp({
       sleepSummaryData,
       // Lullaby player
       lullabyPlaying, lullabyProgress, lullabyCurrentTime, lullabyDuration,
-      lullabyVolume, toggleLullaby, seekLullaby, setLullabyVolume,
+      lullabyVolume, lullabyLoop, toggleLullaby, toggleLullabyLoop, seekLullaby, setLullabyVolume,
       // Medication
       medicationHistory, medicationLoading, medicationError, medicationUnits, medicationForm,
       openMedicationScreen, openMedicationForm, saveMedication, deleteMedication, loadMedicationHistory,
@@ -2741,6 +2750,9 @@ const app = createApp({
             <span>{{ lullabyDuration }}</span>
           </div>
         </div>
+        <button class="lp-loop" :class="{on: lullabyLoop}" @click="toggleLullabyLoop" :title="lullabyLoop ? '循環播放：開' : '循環播放：關'">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+        </button>
         <div class="lp-vol" @click="setLullabyVolume($event)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;flex-shrink:0"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path v-if="lullabyVolume > 0.3" d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path v-if="lullabyVolume > 0.6" d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
           <div class="lp-vol-bar">
