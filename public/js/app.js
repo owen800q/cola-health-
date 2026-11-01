@@ -250,6 +250,66 @@ const app = createApp({
     const sleepQuality = ref('好 · 瞓得穩');
     const sleepNotes = ref('');
 
+    // Lullaby player (first 8 minutes of the sleeping song, see scripts/make-sleep-song.sh)
+    const SLEEP_SONG_SRC = '/audio/sleep-song.mp3';
+    const songPlaying = ref(false);
+    const songLoop = ref(localStorage.getItem('sleepSongLoop') === '1');
+    const songCurrent = ref(0);
+    const songDuration = ref(0);
+    let songAudio = null;
+
+    function getSongAudio() {
+      if (songAudio) return songAudio;
+      songAudio = new Audio(SLEEP_SONG_SRC);
+      songAudio.preload = 'none';
+      songAudio.loop = songLoop.value;
+      songAudio.addEventListener('loadedmetadata', () => { songDuration.value = songAudio.duration || 0; });
+      songAudio.addEventListener('timeupdate', () => { songCurrent.value = songAudio.currentTime; });
+      songAudio.addEventListener('play', () => { songPlaying.value = true; });
+      songAudio.addEventListener('pause', () => { songPlaying.value = false; });
+      songAudio.addEventListener('ended', () => { songPlaying.value = false; songCurrent.value = 0; });
+      songAudio.addEventListener('error', () => {
+        songPlaying.value = false;
+        showToast('未能載入催眠曲');
+        songAudio = null;
+      });
+      return songAudio;
+    }
+
+    function toggleSleepSong() {
+      const a = getSongAudio();
+      if (a.paused) {
+        a.play().catch(() => { songPlaying.value = false; showToast('未能播放催眠曲'); });
+      } else {
+        a.pause();
+      }
+    }
+
+    function stopSleepSong() {
+      if (!songAudio) return;
+      songAudio.pause();
+      songAudio.currentTime = 0;
+      songCurrent.value = 0;
+    }
+
+    function toggleSongLoop() {
+      songLoop.value = !songLoop.value;
+      localStorage.setItem('sleepSongLoop', songLoop.value ? '1' : '0');
+      if (songAudio) songAudio.loop = songLoop.value;
+    }
+
+    function seekSleepSong(e) {
+      if (!songAudio || !songDuration.value) return;
+      const rect = e.currentTarget.getBoundingClientRect();
+      const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+      songAudio.currentTime = ratio * songDuration.value;
+    }
+
+    const fmtSongTime = (sec) => {
+      const t = Math.floor(sec || 0);
+      return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+    };
+
     // Medication records
     const medicationHistory = ref([]);
     const medicationLoading = ref(false);
@@ -2405,6 +2465,7 @@ const app = createApp({
 
     onUnmounted(() => {
       if (sleepTimer) clearInterval(sleepTimer);
+      stopSleepSong();
       if (_nowTimer) clearInterval(_nowTimer);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     });
@@ -2447,6 +2508,8 @@ const app = createApp({
       toggleSleep, saveManualSleep, deleteSleep,
       manualSleepStart, manualSleepEnd, sleepQuality, sleepNotes,
       sleepSummaryData,
+      songPlaying, songLoop, songCurrent, songDuration,
+      toggleSleepSong, stopSleepSong, toggleSongLoop, seekSleepSong, fmtSongTime,
       // Medication
       medicationHistory, medicationLoading, medicationError, medicationUnits, medicationForm,
       openMedicationScreen, openMedicationForm, saveMedication, deleteMedication, loadMedicationHistory,
@@ -2638,6 +2701,18 @@ const app = createApp({
         <svg><use :href="isSleeping ? '#i-sun' : '#i-moon'"/></svg>
         <span>{{ isSleeping ? '醒咗' : '瞓覺' }}</span>
       </button>
+    </div>
+    <div class="song-card">
+      <button class="song-play" :class="{playing: songPlaying}" @click="toggleSleepSong" :aria-label="songPlaying ? '暫停催眠曲' : '播放催眠曲'">
+        <svg v-if="songPlaying" viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor"/><rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor"/></svg>
+        <svg v-else viewBox="0 0 24 24"><path d="M8 5.5v13a1 1 0 001.5.86l10.5-6.5a1 1 0 000-1.72L9.5 4.64A1 1 0 008 5.5z" fill="currentColor"/></svg>
+      </button>
+      <div class="song-body">
+        <div class="song-title">催眠曲 <span class="song-sub">8 分鐘</span></div>
+        <div class="song-bar" @click="seekSleepSong"><div class="song-fill" :style="{width: (songDuration ? songCurrent / songDuration * 100 : 0) + '%'}"></div></div>
+        <div class="song-time"><span>{{ fmtSongTime(songCurrent) }}</span><span>{{ fmtSongTime(songDuration) }}</span></div>
+      </div>
+      <button class="song-loop" :class="{on: songLoop}" @click="toggleSongLoop" aria-label="重複播放">循環</button>
     </div>
     <div class="dn"><span class="da" @click="prevDay"><svg><use href="#i-back"/></svg></span><span class="dt" @click="openDatePicker">{{ viewDateStr }}</span><span class="da" @click="nextDay"><svg><use href="#i-arrow"/></svg></span></div>
     <div class="sb">

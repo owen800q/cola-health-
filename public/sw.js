@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cola-health-v11';
+const CACHE_NAME = 'cola-health-v12';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -39,6 +39,9 @@ self.addEventListener('activate', (event) => {
 // Fetch event — network first for API, cache first for static assets
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
+
+  // Audio: let the browser stream it directly (range requests break with cache-first)
+  if (url.pathname.startsWith('/audio/')) return;
 
   // API calls: Network First
   if (url.pathname.startsWith('/api/')) {

@@ -20,3 +20,14 @@ npx wrangler deploy --dry-run
 ```
 
 `npm test` 使用獨立的 Miniflare D1 測試資料庫，涵蓋舊資料庫遷移、食藥紀錄 CRUD、香港時間跨日查詢、時間線排序及輸入驗證，不會存取正式資料。
+
+## 催眠曲
+
+睡眠記錄頁「瞓覺」按鈕下方有催眠曲播放器，可播放／暫停、拖動進度及開關循環播放（設定保存在本機）。離開 App 時會自動停止。
+
+音檔放在 `public/audio/sleep-song.mp3`。用以下指令把來源音檔剪成頭 8 分鐘（結尾 5 秒淡出）：
+
+```sh
+yt-dlp -x --audio-format mp3 -o song.mp3 "https://youtu.be/RB1ZJoLIplw"
+scripts/make-sleep-song.sh song.mp3
+```

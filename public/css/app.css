@@ -212,6 +212,20 @@ label.fi { cursor: pointer; }
 .sleep-big .sb-sleep { background: linear-gradient(135deg, #9B59B6, #8E44AD); }
 .sleep-big .sb-wake { background: linear-gradient(135deg, var(--green), #4CD964); }
 
+/* Lullaby player */
+.song-card { display: flex; align-items: center; gap: 12px; margin: 0 16px 12px; padding: 12px 14px; background: var(--card); border-radius: 12px; }
+.song-play { flex: none; width: 44px; height: 44px; border-radius: 50%; border: none; background: var(--purple); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.song-play svg { width: 22px; height: 22px; }
+.song-play:active { transform: scale(0.94); }
+.song-body { flex: 1; min-width: 0; }
+.song-title { font-size: 15px; font-weight: 600; }
+.song-sub { font-size: 12px; font-weight: 400; color: var(--t2); margin-left: 4px; }
+.song-bar { height: 4px; margin: 8px 0 4px; background: var(--t4); border-radius: 2px; overflow: hidden; cursor: pointer; }
+.song-fill { height: 100%; background: var(--purple); transition: width .25s linear; }
+.song-time { display: flex; justify-content: space-between; font-size: 11px; color: var(--t2); font-variant-numeric: tabular-nums; }
+.song-loop { flex: none; padding: 6px 10px; border-radius: 14px; border: 1px solid var(--t4); background: none; font-size: 12px; color: var(--t2); cursor: pointer; }
+.song-loop.on { border-color: var(--purple); color: var(--purple); background: rgba(155,89,182,0.08); }
+
 /* Segmented tabs */
 .seg { display: flex; margin: 16px; background: rgba(0,0,0,0.06); border-radius: 8px; padding: 2px; }
 .seg-btn { flex: 1; text-align: center; font-size: 14px; padding: 8px 4px; border-radius: 6px; cursor: pointer; color: var(--t2); transition: all .2s; }
