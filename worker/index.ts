@@ -20,6 +20,7 @@ import { temperatureRoutes } from './routes/temperature';
 import { babyRoomsRoutes } from './routes/babyrooms';
 import { milestoneRoutes } from './routes/milestone';
 import { solidFoodRoutes } from './routes/solidfood';
+import { mediaRange } from './lib/range';
 import { handleScheduled } from './scheduled';
 
 export type Bindings = {
@@ -59,6 +60,9 @@ app.route('/api/medications', medicationRoutes);
 app.route('/api/babyrooms', babyRoomsRoutes);
 app.route('/api/milestones', milestoneRoutes);
 app.route('/api/solidfoods', solidFoodRoutes);
+
+// Media files answer Range requests (iOS audio, seeking, China relay).
+app.get('*', mediaRange);
 
 // Serve static files from Workers Sites KV
 app.get('*', serveStatic({ root: './', manifest }));

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cola-health-v11';
+const CACHE_NAME = 'cola-health-v12';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -7,6 +7,7 @@ const STATIC_ASSETS = [
   '/icons/icon-512.svg',
   '/css/app.css',
   '/js/api.js',
+  '/js/lullaby-sources.js',
   '/js/app.js',
   'https://fastly.jsdelivr.net/npm/vant@4/lib/index.css',
   'https://fastly.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js',
@@ -39,6 +40,10 @@ self.addEventListener('activate', (event) => {
 // Fetch event — network first for API, cache first for static assets
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
+
+  // Audio streams with Range requests and may come from a relay or CDN:
+  // let the browser fetch it directly instead of caching a 7 MB file.
+  if (event.request.headers.has('range') || event.request.destination === 'audio' || url.pathname.endsWith('.mp3')) return;
 
   // API calls: Network First
   if (url.pathname.startsWith('/api/')) {
