@@ -1,10 +1,11 @@
-const CACHE_NAME = 'cola-health-v12';
+const CACHE_NAME = 'cola-health-v13';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
   '/manifest.json',
   '/icons/icon-192.svg',
   '/icons/icon-512.svg',
+  '/icons/drug-sensitivity.png',
   '/css/app.css',
   '/js/api.js',
   '/js/lullaby-sources.js',

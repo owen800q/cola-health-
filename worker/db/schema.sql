@@ -438,3 +438,14 @@ CREATE TABLE IF NOT EXISTS medications (
   created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_medications_time ON medications(time DESC);
+
+-- Drug sensitivity list (medications that caused an allergic or adverse reaction)
+CREATE TABLE IF NOT EXISTS drug_sensitivities (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  reactions TEXT NOT NULL DEFAULT '[]',
+  severity TEXT CHECK(severity IN ('輕微', '中等', '嚴重')),
+  occurred_on TEXT,
+  note TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);

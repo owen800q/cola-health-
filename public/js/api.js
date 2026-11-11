@@ -100,6 +100,12 @@
     updateMedication: (id, data) => request('/medications/' + id, { method: 'PUT', body: data }),
     deleteMedication: (id) => request('/medications/' + id, { method: 'DELETE' }),
 
+    // ---- Drug sensitivity list ----
+    getDrugSensitivities: () => request('/drug-sensitivities'),
+    createDrugSensitivity: (data) => request('/drug-sensitivities', { method: 'POST', body: data }),
+    updateDrugSensitivity: (id, data) => request('/drug-sensitivities/' + id, { method: 'PUT', body: data }),
+    deleteDrugSensitivity: (id) => request('/drug-sensitivities/' + id, { method: 'DELETE' }),
+
     // ---- Timeline ----
     getTimeline: (babyId, params) => {
       const q = new URLSearchParams({ baby_id: babyId, ...params }).toString();

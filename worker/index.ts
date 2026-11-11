@@ -20,6 +20,7 @@ import { temperatureRoutes } from './routes/temperature';
 import { babyRoomsRoutes } from './routes/babyrooms';
 import { milestoneRoutes } from './routes/milestone';
 import { solidFoodRoutes } from './routes/solidfood';
+import { drugSensitivityRoutes } from './routes/drugsensitivity';
 import { mediaRange } from './lib/range';
 import { handleScheduled } from './scheduled';
 
@@ -60,6 +61,7 @@ app.route('/api/medications', medicationRoutes);
 app.route('/api/babyrooms', babyRoomsRoutes);
 app.route('/api/milestones', milestoneRoutes);
 app.route('/api/solidfoods', solidFoodRoutes);
+app.route('/api/drug-sensitivities', drugSensitivityRoutes);
 
 // Media files answer Range requests (iOS audio, seeking, China relay).
 app.get('*', mediaRange);

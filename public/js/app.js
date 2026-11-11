@@ -516,6 +516,108 @@ const app = createApp({
       finally { saving.value = false; }
     }
 
+    // Drug sensitivity (藥物敏感): one short, always-visible list rather than a daily log.
+    const DS_REACTIONS = ['出疹／紅腫', '痕癢', '面或嘴唇腫', '嘔吐', '肚瀉', '呼吸困難', '發燒', '其他'];
+    const DS_SEVERITIES = ['輕微', '中等', '嚴重'];
+    const drugSensitivities = ref([]);
+    const drugSensitivityLoading = ref(false);
+    const drugSensitivityError = ref('');
+    const drugSensitivityForm = reactive({ name: '', reactions: [], severity: '', occurred_on: '', note: '' });
+    let drugSensitivityLoadId = 0;
+
+    async function loadDrugSensitivities() {
+      const requestId = ++drugSensitivityLoadId;
+      // Keep the list on screen while refreshing; only show "loading" when there is nothing yet.
+      drugSensitivityLoading.value = !drugSensitivities.value.length;
+      drugSensitivityError.value = '';
+      try {
+        const records = await API.getDrugSensitivities();
+        if (requestId === drugSensitivityLoadId) drugSensitivities.value = records || [];
+      } catch (e) {
+        if (requestId === drugSensitivityLoadId && !drugSensitivities.value.length) drugSensitivityError.value = '未能載入藥物敏感記錄，請重試';
+      } finally {
+        if (requestId === drugSensitivityLoadId) drugSensitivityLoading.value = false;
+      }
+    }
+
+    function openDrugSensitivityScreen() {
+      if (activeSub.value) closeSub();
+      if (currentPage.value === 8) loadDrugSensitivities();
+      else go(8);
+    }
+
+    function openDrugSensitivityForm(item) {
+      editingId.value = item ? item.id : null;
+      editingType.value = item ? 'drugsensitivity' : null;
+      Object.assign(drugSensitivityForm, {
+        name: item ? item.name : '', reactions: item ? (item.reactions || []).slice() : [],
+        severity: item ? item.severity || '' : '', occurred_on: item ? item.occurred_on || '' : '',
+        note: item ? item.note || '' : '',
+      });
+      openSub('ds');
+    }
+
+    function dsToggleReaction(r) {
+      const i = drugSensitivityForm.reactions.indexOf(r);
+      if (i >= 0) drugSensitivityForm.reactions.splice(i, 1);
+      else drugSensitivityForm.reactions.push(r);
+    }
+
+    function dsDateCN(day) {
+      if (!day) return '';
+      const p = day.split('-');
+      return p[0] + '年' + parseInt(p[1]) + '月' + parseInt(p[2]) + '日';
+    }
+
+    async function saveDrugSensitivity() {
+      if (saving.value) return;
+      const name = drugSensitivityForm.name.trim();
+      if (!name || name.length > 200) return showToast('請輸入藥名（最多 200 字）');
+      if (drugSensitivityForm.occurred_on && drugSensitivityForm.occurred_on > fmtDate(new Date())) return showToast('發生日期不可以係將來');
+      if (drugSensitivityForm.note.length > 2000) return showToast('備註最多 2000 字');
+      const data = {
+        name, reactions: drugSensitivityForm.reactions.slice(), severity: drugSensitivityForm.severity || null,
+        occurred_on: drugSensitivityForm.occurred_on || null, note: drugSensitivityForm.note.trim() || null,
+      };
+      saving.value = true;
+      showLoading('儲存中...');
+      try {
+        if (editingId.value && editingType.value === 'drugsensitivity') await API.updateDrugSensitivity(editingId.value, data);
+        else await API.createDrugSensitivity(data);
+        hideLoading();
+        showToast(editingId.value ? '藥物敏感記錄已更新' : '藥物敏感記錄已儲存');
+        closeSub();
+        loadDrugSensitivities();
+      } catch (e) { hideLoading(); showToast('儲存失敗，請重試'); }
+      finally { saving.value = false; }
+    }
+
+    async function deleteDrugSensitivity(id) {
+      if (saving.value) return;
+      const ok = await confirmDialog('刪除藥物敏感記錄？', '刪除後無法恢復');
+      if (!ok || saving.value) return;
+      saving.value = true;
+      showLoading('刪除中...');
+      try {
+        await API.deleteDrugSensitivity(id);
+        if (editingType.value === 'drugsensitivity' && editingId.value === id) closeSub();
+        hideLoading();
+        showToast('藥物敏感記錄已刪除');
+        loadDrugSensitivities();
+      } catch (e) { hideLoading(); showToast('刪除失敗，請重試'); }
+      finally { saving.value = false; }
+    }
+
+    // Warn while logging a dose of a drug that is on the sensitivity list.
+    const medicationSensitivityMatch = computed(() => {
+      const typed = medicationForm.name.trim().toLowerCase();
+      if (typed.length < 2) return null;
+      return drugSensitivities.value.find((d) => {
+        const known = d.name.toLowerCase();
+        return known.length >= 2 && (typed.includes(known) || known.includes(typed));
+      }) || null;
+    });
+
     // Temperature page
     const tempHistory = ref([]);
     const tempValue = ref(36.5);
@@ -2565,6 +2667,7 @@ const app = createApp({
       restoreSleepTimer();
       setupPush();
       loadReminders();
+      loadDrugSensitivities();
     });
 
     // Auto-refresh when app returns from background (like WeChat onShow)
@@ -2577,6 +2680,7 @@ const app = createApp({
         else if (p === 3) loadSleepHistory();
         else if (p === 5) { loadSolidFoods(); loadSolidFoodList(); }
         else if (p === 7) loadMedicationHistory();
+        else if (p === 8) loadDrugSensitivities();
       }
     }
     document.addEventListener('visibilitychange', onVisibilityChange);
@@ -2599,6 +2703,7 @@ const app = createApp({
       if (p === 5) { loadSolidFoods(); loadSolidFoodList(); }
       if (p === 6) loadMilestones();
       if (p === 7) loadMedicationHistory();
+      if (p === 8) loadDrugSensitivities();
     });
 
     return {
@@ -2635,6 +2740,10 @@ const app = createApp({
       // Medication
       medicationHistory, medicationLoading, medicationError, medicationUnits, medicationForm,
       openMedicationScreen, openMedicationForm, saveMedication, deleteMedication, loadMedicationHistory,
+      // Drug sensitivity
+      DS_REACTIONS, DS_SEVERITIES, drugSensitivities, drugSensitivityLoading, drugSensitivityError, drugSensitivityForm,
+      openDrugSensitivityScreen, openDrugSensitivityForm, saveDrugSensitivity, deleteDrugSensitivity, loadDrugSensitivities,
+      dsToggleReaction, dsDateCN, medicationSensitivityMatch,
       // Temperature
       tempHistory, tempValue, tempMethod, tempTime, tempNotes,
       adjTemp, saveTemp, deleteTemp, tempSummary,
@@ -2727,12 +2836,18 @@ const app = createApp({
         <van-progress :percentage="nextFeedProgress" :show-pivot="false" stroke-width="3" :color="nextFeedOverdue ? 'var(--red)' : 'var(--blue)'" track-color="rgba(0,0,0,0.04)" />
       </div>
     </div>
+    <div class="ds-home" v-if="drugSensitivities.length" role="button" @click="openDrugSensitivityScreen()">
+      <img src="/icons/drug-sensitivity.png" alt="">
+      <div class="ds-home-b"><div class="ds-home-t">藥物敏感</div><div class="ds-home-n">{{ drugSensitivities.map(d => d.name).join('、') }}</div></div>
+      <span class="ds-home-a"><svg><use href="#i-arrow"/></svg></span>
+    </div>
     <div class="gd">
       <div class="gi" @click="openSub('af'); initTimes()"><div class="gi-ico" style="color:var(--blue)"><svg><use href="#i-plus"/></svg></div><span>記錄飲奶</span></div>
       <div class="gi" @click="openSub('ad'); initTimes()"><div class="gi-ico" style="color:var(--green)"><svg><use href="#i-edit"/></svg></div><span>記錄換片</span></div>
       <div class="gi" @click="openSub('as')"><div class="gi-ico" style="color:var(--purple)"><svg><use href="#i-moon"/></svg></div><span>記錄睡眠</span></div>
       <div class="gi" @click="openSub('at'); initTimes(); loadTempHistory()"><div class="gi-ico" style="color:var(--red)"><svg><use href="#i-thermo"/></svg></div><span>量體溫</span></div>
       <div class="gi" @click="openMedicationScreen()"><div class="gi-ico" style="color:var(--purple)"><svg><use href="#i-pill"/></svg></div><span>記錄食藥</span></div>
+      <div class="gi" @click="openDrugSensitivityScreen()"><div class="gi-ico"><img class="gi-img" src="/icons/drug-sensitivity.png" alt=""></div><span>藥物敏感</span></div>
       <div class="gi" @click="openSolidScreen()"><div class="gi-ico"><img class="gi-img" src="/icons/solid-food.svg" alt="記錄輔食"></div><span>記錄輔食</span></div>
       <div class="gi" @click="openSub('g6')"><div class="gi-ico" style="color:var(--red)"><svg><use href="#i-warn"/></svg></div><span>蠶豆病</span></div>
       <div class="gi" @click="openSub('he')"><div class="gi-ico" style="color:var(--warn)"><svg><use href="#i-shield"/></svg></div><span>疫苗接種</span></div>
@@ -2904,6 +3019,7 @@ const app = createApp({
     <div class="st">健康</div>
     <div class="cs">
       <div class="cl" @click="openMedicationScreen()"><span class="ci" style="color:var(--purple)"><svg><use href="#i-pill"/></svg></span><div class="cb"><div class="ct">食藥記錄</div><div class="cd">藥名、份量及食藥時間</div></div><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
+      <div class="cl" @click="openDrugSensitivityScreen()"><span class="ci"><img class="ci-img" src="/icons/drug-sensitivity.png" alt=""></span><div class="cb"><div class="ct">藥物敏感</div><div class="cd">曾經引起過敏或不良反應嘅藥物</div></div><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
       <div class="cl" @click="openSub('gc'); loadGrowth()"><span class="ci" style="color:var(--green)"><svg><use href="#i-chart"/></svg></span><div class="cb"><div class="ct">成長曲線</div><div class="cd">0–5歲體重/身高百分位 (WHO · 衞生署)</div></div><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
       <div class="cl" @click="openSub('he')"><span class="ci" style="color:var(--green)"><svg><use href="#i-shield"/></svg></span><div class="cb"><div class="ct">疫苗接種計劃</div><div class="cd">香港兒童免疫接種計劃</div></div><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
       <div class="cl" @click="openSub('hs')"><span class="ci" style="color:var(--blue)"><svg><use href="#i-health"/></svg></span><div class="cb"><div class="ct">幼兒健康及發展綜合計劃</div></div><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
@@ -3226,9 +3342,70 @@ const app = createApp({
         <label class="fi"><span class="fl">食藥日期</span><input class="fv" type="date" v-model="medicationForm.date" required></label>
         <label class="fi"><span class="fl">食藥時間</span><input class="fv" type="time" v-model="medicationForm.time" required></label>
       </div>
+      <div class="nt nw" v-if="medicationSensitivityMatch" role="alert"><span class="nn" style="color:var(--red)"><svg><use href="#i-warn"/></svg></span><div class="nb2"><strong>留意：藥物敏感</strong>{{ babyName }}曾經對「{{ medicationSensitivityMatch.name }}」有不良反應，食之前請先問醫生或藥劑師。</div></div>
       <div class="fc" style="margin-top:16px"><label class="fi"><span class="fl">備註</span><textarea class="fv" v-model="medicationForm.note" maxlength="2000" rows="3" placeholder="例如：飯後服用"></textarea></label></div>
       <div class="ba"><button class="bp" type="submit" :disabled="saving">{{ saving ? '儲存中...' : editingType === 'medication' ? '更新記錄' : '儲存記錄' }}</button></div>
       <div class="btn-row" v-if="editingType === 'medication'"><button class="bp-outline medication-delete" type="button" :disabled="saving" @click="deleteMedication(editingId)">刪除記錄</button></div>
+    </form>
+  </div>
+
+  <!-- ===== DRUG SENSITIVITY (藥物敏感) LIST ===== -->
+  <div class="page ds-page" :class="{active: currentPage === 8}">
+    <div class="nb"><span class="nb-back" @click="go(0)"><svg><use href="#i-back"/></svg></span><span class="nb-t">藥物敏感</span><button class="medication-add" aria-label="新增藥物敏感記錄" @click="openDrugSensitivityForm()"><svg><use href="#i-plus"/></svg></button></div>
+    <div class="ds-hero">
+      <img src="/icons/drug-sensitivity.png" alt="">
+      <div class="ds-hero-b">
+        <div class="ds-hero-t" v-if="drugSensitivities.length">{{ babyName }}對 {{ drugSensitivities.length }} 種藥物敏感</div>
+        <div class="ds-hero-t" v-else>{{ babyName }}嘅藥物敏感記錄</div>
+        <div class="ds-hero-d">睇醫生或者買藥嗰陣，請俾醫護人員睇呢一頁。</div>
+      </div>
+    </div>
+    <div class="btn-row"><button class="bp" @click="openDrugSensitivityForm()">新增敏感藥物</button></div>
+    <div class="empty-state" v-if="drugSensitivityLoading" role="status"><p>載入中...</p></div>
+    <div class="empty-state" v-else-if="drugSensitivityError" role="alert"><p>{{ drugSensitivityError }}</p><button class="bp-outline" @click="loadDrugSensitivities">重試</button></div>
+    <template v-else-if="drugSensitivities.length">
+      <div class="st">敏感藥物（撳一下可以修改）</div>
+      <div class="cs">
+        <div class="sw-row" v-for="item in drugSensitivities" :key="item.id">
+          <div class="sw-c" @touchstart="swStart" @touchmove="swMove" @touchend="swEnd">
+            <div class="cl ds-row" @click="openDrugSensitivityForm(item)">
+              <div class="cb">
+                <div class="ds-name">{{ item.name }}<span class="ds-sev" v-if="item.severity" :class="'ds-sev-' + (DS_SEVERITIES.indexOf(item.severity) + 1)">{{ item.severity }}</span></div>
+                <div class="ds-line" v-if="item.reactions.length">反應：{{ item.reactions.join('、') }}</div>
+                <div class="ds-line ds-sub" v-if="item.occurred_on">發生日期：{{ dsDateCN(item.occurred_on) }}</div>
+                <div class="ds-line ds-sub" v-if="item.note">{{ item.note }}</div>
+              </div>
+              <span class="ca"><svg><use href="#i-arrow"/></svg></span>
+            </div>
+          </div>
+          <div class="sw-del" @click="deleteDrugSensitivity(item.id)">刪除</div>
+        </div>
+      </div>
+    </template>
+    <div class="empty-state" v-else><p>暫時未有記錄。<br>如果{{ babyName }}食藥後出疹、嘔吐或有其他不適，可以喺呢度記低。</p></div>
+    <div class="nt nw"><span class="nn" style="color:var(--red)"><svg><use href="#i-warn"/></svg></span><div class="nb2"><strong>嚴重反應要即時求醫</strong>如出現氣促、面腫、嘴唇發紫或持續嘔吐，應立即求醫或致電 999。</div></div>
+  </div>
+
+  <!-- ===== SUB: ADD / EDIT DRUG SENSITIVITY ===== -->
+  <div class="sub medication-form ds-form" :class="{active: activeSub === 'ds'}">
+    <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">{{ editingType === 'drugsensitivity' ? '修改敏感藥物' : '新增敏感藥物' }}</span><div class="nb-ph"></div></div>
+    <form @submit.prevent="saveDrugSensitivity">
+      <div class="st">邊隻藥？</div>
+      <div class="fc"><label class="fi"><input class="fv ds-input" type="text" v-model="drugSensitivityForm.name" maxlength="200" placeholder="輸入藥袋或藥盒上的名稱" aria-label="藥名" required></label></div>
+      <div class="st">有咩反應？（可選多項）</div>
+      <div class="chips ds-chips">
+        <button type="button" class="chip" v-for="r in DS_REACTIONS" :key="r" :class="{on: drugSensitivityForm.reactions.includes(r)}" :aria-pressed="drugSensitivityForm.reactions.includes(r)" @click="dsToggleReaction(r)">{{ r }}</button>
+      </div>
+      <div class="st">嚴重程度（唔確定可以唔揀）</div>
+      <div class="seg ds-seg">
+        <button type="button" class="seg-btn" v-for="s in DS_SEVERITIES" :key="s" :class="{active: drugSensitivityForm.severity === s}" :aria-pressed="drugSensitivityForm.severity === s" @click="drugSensitivityForm.severity = drugSensitivityForm.severity === s ? '' : s">{{ s }}</button>
+      </div>
+      <div class="fc">
+        <label class="fi"><span class="fl">發生日期</span><input class="fv" type="date" v-model="drugSensitivityForm.occurred_on"></label>
+      </div>
+      <div class="fc" style="margin-top:16px"><label class="fi"><span class="fl">備註</span><textarea class="fv" v-model="drugSensitivityForm.note" maxlength="2000" rows="3" placeholder="例如：食完半個鐘出疹，醫生話以後唔好再食"></textarea></label></div>
+      <div class="ba"><button class="bp" type="submit" :disabled="saving">{{ saving ? '儲存中...' : editingType === 'drugsensitivity' ? '更新記錄' : '儲存記錄' }}</button></div>
+      <div class="btn-row" v-if="editingType === 'drugsensitivity'"><button class="bp-outline medication-delete" type="button" :disabled="saving" @click="deleteDrugSensitivity(editingId)">刪除記錄</button></div>
     </form>
   </div>
 
