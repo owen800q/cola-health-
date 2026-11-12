@@ -524,6 +524,9 @@ const app = createApp({
     const drugSensitivityError = ref('');
     const drugSensitivityForm = reactive({ name: '', reactions: [], severity: '', occurred_on: '', note: '' });
     let drugSensitivityLoadId = 0;
+    // The home-page reminder is opt-in, remembered on this device.
+    const drugSensitivityOnHome = ref(localStorage.getItem('drugSensitivityOnHome') === '1');
+    watch(drugSensitivityOnHome, (on) => { localStorage.setItem('drugSensitivityOnHome', on ? '1' : '0'); });
 
     async function loadDrugSensitivities() {
       const requestId = ++drugSensitivityLoadId;
@@ -2743,7 +2746,7 @@ const app = createApp({
       // Drug sensitivity
       DS_REACTIONS, DS_SEVERITIES, drugSensitivities, drugSensitivityLoading, drugSensitivityError, drugSensitivityForm,
       openDrugSensitivityScreen, openDrugSensitivityForm, saveDrugSensitivity, deleteDrugSensitivity, loadDrugSensitivities,
-      dsToggleReaction, dsDateCN, medicationSensitivityMatch,
+      dsToggleReaction, dsDateCN, medicationSensitivityMatch, drugSensitivityOnHome,
       // Temperature
       tempHistory, tempValue, tempMethod, tempTime, tempNotes,
       adjTemp, saveTemp, deleteTemp, tempSummary,
@@ -2836,7 +2839,7 @@ const app = createApp({
         <van-progress :percentage="nextFeedProgress" :show-pivot="false" stroke-width="3" :color="nextFeedOverdue ? 'var(--red)' : 'var(--blue)'" track-color="rgba(0,0,0,0.04)" />
       </div>
     </div>
-    <div class="ds-home" v-if="drugSensitivities.length" role="button" @click="openDrugSensitivityScreen()">
+    <div class="ds-home" v-if="drugSensitivityOnHome && drugSensitivities.length" role="button" @click="openDrugSensitivityScreen()">
       <img src="/icons/drug-sensitivity.png" alt="">
       <div class="ds-home-b"><div class="ds-home-t">藥物敏感</div><div class="ds-home-n">{{ drugSensitivities.map(d => d.name).join('、') }}</div></div>
       <span class="ds-home-a"><svg><use href="#i-arrow"/></svg></span>
@@ -3383,6 +3386,7 @@ const app = createApp({
       </div>
     </template>
     <div class="empty-state" v-else><p>暫時未有記錄。<br>如果{{ babyName }}食藥後出疹、嘔吐或有其他不適，可以喺呢度記低。</p></div>
+    <div class="fc" v-if="drugSensitivities.length"><label class="fi"><span class="fl" style="width:auto;flex:1">喺主頁顯示敏感藥物</span><label class="tog"><input type="checkbox" v-model="drugSensitivityOnHome"><span class="tsl"></span></label></label></div>
     <div class="nt nw"><span class="nn" style="color:var(--red)"><svg><use href="#i-warn"/></svg></span><div class="nb2"><strong>嚴重反應要即時求醫</strong>如出現氣促、面腫、嘴唇發紫或持續嘔吐，應立即求醫或致電 999。</div></div>
   </div>
 
