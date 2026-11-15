@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cola-health-v14';
+const CACHE_NAME = 'cola-health-v15';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -45,6 +45,9 @@ self.addEventListener('fetch', (event) => {
   // Audio streams with Range requests and may come from a relay or CDN:
   // let the browser fetch it directly instead of caching a 7 MB file.
   if (event.request.headers.has('range') || event.request.destination === 'audio' || url.pathname.endsWith('.mp3')) return;
+
+  // Private info is password protected: never cache it, always go to the network.
+  if (url.pathname.startsWith('/api/private-info')) return;
 
   // API calls: Network First
   if (url.pathname.startsWith('/api/')) {

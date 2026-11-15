@@ -17,11 +17,17 @@
     const res = await fetch(url, config);
     if (!res.ok) {
       const text = await res.text();
-      throw new Error(text || res.statusText);
+      const err = new Error(text || res.statusText);
+      err.status = res.status;
+      throw err;
     }
     const ct = res.headers.get('content-type') || '';
     if (ct.includes('application/json')) return res.json();
     return res.text();
+  }
+
+  function privateHeaders(pw) {
+    return { 'Content-Type': 'application/json', 'X-Private-Password': pw };
   }
 
   window.API = {
@@ -105,6 +111,12 @@
     createDrugSensitivity: (data) => request('/drug-sensitivities', { method: 'POST', body: data }),
     updateDrugSensitivity: (id, data) => request('/drug-sensitivities/' + id, { method: 'PUT', body: data }),
     deleteDrugSensitivity: (id) => request('/drug-sensitivities/' + id, { method: 'DELETE' }),
+
+    // ---- Private info (password sent on every request; never stored) ----
+    getPrivateInfo: (pw) => request('/private-info', { headers: privateHeaders(pw) }),
+    createPrivateInfo: (pw, data) => request('/private-info', { method: 'POST', headers: privateHeaders(pw), body: data }),
+    updatePrivateInfo: (pw, id, data) => request('/private-info/' + id, { method: 'PUT', headers: privateHeaders(pw), body: data }),
+    deletePrivateInfo: (pw, id) => request('/private-info/' + id, { method: 'DELETE', headers: privateHeaders(pw) }),
 
     // ---- Timeline ----
     getTimeline: (babyId, params) => {

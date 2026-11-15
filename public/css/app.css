@@ -697,3 +697,21 @@ label.fi { cursor: pointer; }
 .ds-form .ds-seg { margin-top: 4px; }
 .ds-form .ds-seg .seg-btn { border: 0; background: transparent; font-family: inherit; font-size: 16px; padding: 11px 4px; }
 .ds-form .ds-seg .seg-btn.active { background: var(--card); }
+
+/* ===== 私人資料 (Private info, iPhone only, password locked) ===== */
+.pi-lock { display: flex; flex-direction: column; align-items: center; padding: 48px 16px 0; }
+.pi-lock .btn-row { align-self: stretch; }
+.pi-lock-ico { color: var(--t2); }
+.pi-lock-ico svg { width: 44px; height: 44px; }
+.pi-lock-t { font-size: 17px; font-weight: 600; margin: 12px 0 16px; }
+.pi-lock-in { width: 100%; max-width: 260px; height: 48px; font-size: 22px; letter-spacing: 6px; text-align: center; border: 1px solid var(--t5); border-radius: 10px; background: var(--card); color: var(--t1); font-family: inherit; }
+.pi-lock-err { color: var(--red); font-size: 14px; margin-top: 10px; }
+.cl.pi-row { padding: 12px 16px; align-items: center; }
+.pi-title { font-size: 13px; color: var(--t2); line-height: 1.4; }
+.pi-value { font-size: 19px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
+.pi-note { font-size: 14px; color: var(--t2); line-height: 1.45; margin-top: 2px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.pi-copy { flex-shrink: 0; margin-left: 10px; padding: 6px 12px; border: 1px solid var(--blue); border-radius: 16px; background: transparent; color: var(--blue); font-family: inherit; font-size: 14px; cursor: pointer; }
+.medication-form .pi-input { text-align: left; }
+.pi-chips { padding: 10px 16px 0; }
+.pi-chips .chip { font-family: inherit; }
+.pi-chips .chip.on { background: #EAF2FF; color: var(--blue); border-color: var(--blue); }

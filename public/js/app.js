@@ -621,6 +621,114 @@ const app = createApp({
       }) || null;
     });
 
+    // Private info (私人資料): a password-locked tab, offered on iPhone only.
+    // The password stays in memory and is dropped whenever the tab is left or
+    // the app goes to the background, so it must be typed again each visit.
+    const isIPhone = /iPhone/.test(navigator.userAgent || '');
+    const PI_PAGE = 9;
+    const PI_SUGGESTIONS = ['疫苗接種紀錄卡號碼', '出世紙號碼', '身份證號碼', '回港證號碼', '護照號碼', '醫院病歷號碼'];
+    const privateInfo = ref([]);
+    const privateInfoUnlocked = ref(false);
+    const privateInfoPassword = ref('');
+    const privateInfoUnlocking = ref(false);
+    const privateInfoLockError = ref('');
+    const privateInfoForm = reactive({ title: '', value: '', note: '' });
+    let privateInfoSecret = '';
+
+    function lockPrivateInfo() {
+      privateInfoSecret = '';
+      privateInfoUnlocked.value = false;
+      privateInfo.value = [];
+      privateInfoPassword.value = '';
+      privateInfoLockError.value = '';
+      if (activeSub.value === 'pi') closeSub();
+    }
+
+    // Wrong password or lockout: drop back to the lock screen with a message.
+    function privateInfoAuthFailed(e) {
+      if (e && (e.status === 401 || e.status === 429)) {
+        lockPrivateInfo();
+        privateInfoLockError.value = e.status === 429 ? '密碼錯誤次數太多，請 15 分鐘後再試' : '密碼錯誤';
+        return true;
+      }
+      return false;
+    }
+
+    async function unlockPrivateInfo() {
+      const pw = privateInfoPassword.value;
+      if (!pw || privateInfoUnlocking.value) return;
+      privateInfoUnlocking.value = true;
+      privateInfoLockError.value = '';
+      try {
+        const records = await API.getPrivateInfo(pw);
+        privateInfoSecret = pw;
+        privateInfo.value = records || [];
+        privateInfoUnlocked.value = true;
+        privateInfoPassword.value = '';
+      } catch (e) {
+        privateInfoPassword.value = '';
+        if (!privateInfoAuthFailed(e)) privateInfoLockError.value = '未能連線，請重試';
+      } finally {
+        privateInfoUnlocking.value = false;
+      }
+    }
+
+    async function loadPrivateInfo() {
+      if (!privateInfoSecret) return;
+      try { privateInfo.value = (await API.getPrivateInfo(privateInfoSecret)) || []; }
+      catch (e) { if (!privateInfoAuthFailed(e)) showToast('未能載入私人資料，請重試'); }
+    }
+
+    function openPrivateInfoForm(item) {
+      editingId.value = item ? item.id : null;
+      editingType.value = item ? 'privateinfo' : null;
+      Object.assign(privateInfoForm, { title: item ? item.title : '', value: item ? item.value : '', note: item ? item.note || '' : '' });
+      openSub('pi');
+    }
+
+    async function savePrivateInfo() {
+      if (saving.value) return;
+      const title = privateInfoForm.title.trim();
+      const value = privateInfoForm.value.trim();
+      if (!title || title.length > 100) return showToast('請輸入項目名稱（最多 100 字）');
+      if (!value || value.length > 500) return showToast('請輸入內容（最多 500 字）');
+      if (privateInfoForm.note.length > 2000) return showToast('備註最多 2000 字');
+      const data = { title, value, note: privateInfoForm.note.trim() || null };
+      const editing = editingId.value && editingType.value === 'privateinfo';
+      saving.value = true;
+      showLoading('儲存中...');
+      try {
+        if (editing) await API.updatePrivateInfo(privateInfoSecret, editingId.value, data);
+        else await API.createPrivateInfo(privateInfoSecret, data);
+        hideLoading();
+        showToast(editing ? '私人資料已更新' : '私人資料已儲存');
+        closeSub();
+        loadPrivateInfo();
+      } catch (e) { hideLoading(); if (!privateInfoAuthFailed(e)) showToast('儲存失敗，請重試'); }
+      finally { saving.value = false; }
+    }
+
+    async function deletePrivateInfo(id) {
+      if (saving.value) return;
+      const ok = await confirmDialog('刪除呢項私人資料？', '刪除後無法恢復');
+      if (!ok || saving.value) return;
+      saving.value = true;
+      showLoading('刪除中...');
+      try {
+        await API.deletePrivateInfo(privateInfoSecret, id);
+        if (editingType.value === 'privateinfo' && editingId.value === id) closeSub();
+        hideLoading();
+        showToast('已刪除');
+        loadPrivateInfo();
+      } catch (e) { hideLoading(); if (!privateInfoAuthFailed(e)) showToast('刪除失敗，請重試'); }
+      finally { saving.value = false; }
+    }
+
+    async function copyPrivateInfo(item) {
+      try { await navigator.clipboard.writeText(item.value); showToast('已複製' + item.title); }
+      catch (e) { showToast('未能複製'); }
+    }
+
     // Temperature page
     const tempHistory = ref([]);
     const tempValue = ref(36.5);
@@ -2675,6 +2783,8 @@ const app = createApp({
 
     // Auto-refresh when app returns from background (like WeChat onShow)
     function onVisibilityChange() {
+      // Re-lock private info as soon as the app is backgrounded.
+      if (document.visibilityState === 'hidden' && privateInfoUnlocked.value) lockPrivateInfo();
       if (document.visibilityState === 'visible') {
         var p = currentPage.value;
         if (p === 0) loadHomeData();
@@ -2698,7 +2808,8 @@ const app = createApp({
     });
 
     // Watch page changes to refresh data
-    watch(currentPage, (p) => {
+    watch(currentPage, (p, prev) => {
+      if (prev === PI_PAGE && p !== PI_PAGE) lockPrivateInfo();
       if (p === 0) loadHomeData();
       if (p === 1) loadFeedHistory();
       if (p === 2) loadDiaperHistory();
@@ -2747,6 +2858,10 @@ const app = createApp({
       DS_REACTIONS, DS_SEVERITIES, drugSensitivities, drugSensitivityLoading, drugSensitivityError, drugSensitivityForm,
       openDrugSensitivityScreen, openDrugSensitivityForm, saveDrugSensitivity, deleteDrugSensitivity, loadDrugSensitivities,
       dsToggleReaction, dsDateCN, medicationSensitivityMatch, drugSensitivityOnHome,
+      // Private info
+      isIPhone, PI_PAGE, PI_SUGGESTIONS, privateInfo, privateInfoUnlocked, privateInfoPassword, privateInfoUnlocking,
+      privateInfoLockError, privateInfoForm, unlockPrivateInfo, lockPrivateInfo, openPrivateInfoForm, savePrivateInfo,
+      deletePrivateInfo, copyPrivateInfo,
       // Temperature
       tempHistory, tempValue, tempMethod, tempTime, tempNotes,
       adjTemp, saveTemp, deleteTemp, tempSummary,
@@ -3390,6 +3505,56 @@ const app = createApp({
     <div class="nt nw"><span class="nn" style="color:var(--red)"><svg><use href="#i-warn"/></svg></span><div class="nb2"><strong>嚴重反應要即時求醫</strong>如出現氣促、面腫、嘴唇發紫或持續嘔吐，應立即求醫或致電 999。</div></div>
   </div>
 
+  <!-- ===== PRIVATE INFO (私人資料), iPhone only, password locked ===== -->
+  <div class="page pi-page" v-if="isIPhone" :class="{active: currentPage === PI_PAGE}">
+    <div class="nb"><span class="nb-ph"></span><span class="nb-t">私人資料</span>
+      <button v-if="privateInfoUnlocked" class="medication-add" aria-label="新增私人資料" @click="openPrivateInfoForm()"><svg><use href="#i-plus"/></svg></button>
+      <span v-else class="nb-ph"></span>
+    </div>
+    <form class="pi-lock" v-if="!privateInfoUnlocked" @submit.prevent="unlockPrivateInfo">
+      <span class="pi-lock-ico"><svg><use href="#i-lock"/></svg></span>
+      <div class="pi-lock-t">請輸入密碼</div>
+      <input class="pi-lock-in" type="password" inputmode="numeric" autocomplete="off" v-model="privateInfoPassword" maxlength="64" aria-label="密碼" :disabled="privateInfoUnlocking">
+      <div class="pi-lock-err" v-if="privateInfoLockError" role="alert">{{ privateInfoLockError }}</div>
+      <div class="btn-row"><button class="bp" type="submit" :disabled="!privateInfoPassword || privateInfoUnlocking">{{ privateInfoUnlocking ? '檢查中...' : '解鎖' }}</button></div>
+    </form>
+    <template v-else>
+      <div class="btn-row"><button class="bp" @click="openPrivateInfoForm()">新增私人資料</button></div>
+      <template v-if="privateInfo.length">
+        <div class="st">已儲存（撳一下可以修改）</div>
+        <div class="cs">
+          <div class="cl pi-row" v-for="item in privateInfo" :key="item.id" @click="openPrivateInfoForm(item)">
+            <div class="cb">
+              <div class="pi-title">{{ item.title }}</div>
+              <div class="pi-value">{{ item.value }}</div>
+              <div class="pi-note" v-if="item.note">{{ item.note }}</div>
+            </div>
+            <button class="pi-copy" type="button" @click.stop="copyPrivateInfo(item)">複製</button>
+          </div>
+        </div>
+      </template>
+      <div class="empty-state" v-else><p>暫時未有記錄。<br>可以記低疫苗接種紀錄卡號碼等私人資料。</p></div>
+      <div class="btn-row"><button class="bp-outline" @click="lockPrivateInfo()">鎖上</button></div>
+    </template>
+  </div>
+
+  <!-- ===== SUB: ADD / EDIT PRIVATE INFO ===== -->
+  <div class="sub medication-form" v-if="isIPhone" :class="{active: activeSub === 'pi'}">
+    <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">{{ editingType === 'privateinfo' ? '修改私人資料' : '新增私人資料' }}</span><div class="nb-ph"></div></div>
+    <form @submit.prevent="savePrivateInfo">
+      <div class="st">項目</div>
+      <div class="fc"><label class="fi"><input class="fv pi-input" type="text" v-model="privateInfoForm.title" maxlength="100" placeholder="例如：疫苗接種紀錄卡號碼" aria-label="項目名稱" required></label></div>
+      <div class="chips pi-chips">
+        <button type="button" class="chip" v-for="t in PI_SUGGESTIONS" :key="t" :class="{on: privateInfoForm.title === t}" @click="privateInfoForm.title = t">{{ t }}</button>
+      </div>
+      <div class="st">內容</div>
+      <div class="fc"><label class="fi"><input class="fv pi-input" type="text" v-model="privateInfoForm.value" maxlength="500" autocomplete="off" placeholder="例如：號碼" aria-label="內容" required></label></div>
+      <div class="fc" style="margin-top:16px"><label class="fi"><span class="fl">備註</span><textarea class="fv" v-model="privateInfoForm.note" maxlength="2000" rows="3"></textarea></label></div>
+      <div class="ba"><button class="bp" type="submit" :disabled="saving">{{ saving ? '儲存中...' : editingType === 'privateinfo' ? '更新' : '儲存' }}</button></div>
+      <div class="btn-row" v-if="editingType === 'privateinfo'"><button class="bp-outline medication-delete" type="button" :disabled="saving" @click="deletePrivateInfo(editingId)">刪除</button></div>
+    </form>
+  </div>
+
   <!-- ===== SUB: ADD / EDIT DRUG SENSITIVITY ===== -->
   <div class="sub medication-form ds-form" :class="{active: activeSub === 'ds'}">
     <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">{{ editingType === 'drugsensitivity' ? '修改敏感藥物' : '新增敏感藥物' }}</span><div class="nb-ph"></div></div>
@@ -3911,6 +4076,7 @@ const app = createApp({
     <div class="ti" :class="{active: currentPage === 1}" @click="go(1)"><svg><use href="#i-bottle"/></svg><span>飲奶</span></div>
     <div class="ti" :class="{active: currentPage === 2}" @click="go(2)"><svg><use href="#i-diaper"/></svg><span>換片</span></div>
     <div class="ti" :class="{active: currentPage === 3}" @click="go(3)"><svg><use href="#i-moon"/></svg><span>睡眠</span></div>
+    <div class="ti" v-if="isIPhone" :class="{active: currentPage === PI_PAGE}" @click="go(PI_PAGE)"><svg><use href="#i-lock"/></svg><span>私人</span></div>
     <div class="ti" :class="{active: currentPage === 4}" @click="go(4)"><svg><use href="#i-gear"/></svg><span>設定</span></div>
   </div>
   `,
