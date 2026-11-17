@@ -10,6 +10,11 @@ binding = "DB"
 database_name = "baby-tracker-db"
 database_id = "3a398a37-964c-45c3-906f-cdf5f8ed6562"
 
+# PP-OCRv6 models for card-number OCR in 私人資料 (shared with mobile-ocr).
+[[r2_buckets]]
+binding = "OCR_MODELS"
+bucket_name = "mobile-ocr-models"
+
 [triggers]
 crons = ["*/5 * * * *", "0 3 * * *"]
 

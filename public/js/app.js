@@ -641,6 +641,7 @@ const app = createApp({
       privateInfo.value = [];
       privateInfoPassword.value = '';
       privateInfoLockError.value = '';
+      closePrivateInfoCrop();
       if (activeSub.value === 'pi') closeSub();
     }
 
@@ -722,6 +723,107 @@ const app = createApp({
         loadPrivateInfo();
       } catch (e) { hideLoading(); if (!privateInfoAuthFailed(e)) showToast('刪除失敗，請重試'); }
       finally { saving.value = false; }
+    }
+
+    // ---- Read a number off a photo ----
+    // Pick a photo, drag a box around the one line to read, and the Worker
+    // recognises that crop (PP-OCRv6 small). Only the crop leaves the phone.
+    const PI_CROP_MIN = 28;        // smallest box side, in screen px
+    const PI_CROP_MAX_HEIGHT = 144; // the model reads at 48px high; 3x is plenty
+    const PI_OCR_MIN_SCORE = 0.7;   // below this the box usually held more than one line
+    const piPhotoInput = ref(null);
+    const piCropImage = ref(null);
+    const piCrop = reactive({ open: false, url: '', ready: false, busy: false, x: 0, y: 0, w: 0, h: 0 });
+    let piCropDrag = null;
+
+    function pickPrivateInfoPhoto() {
+      if (piPhotoInput.value) piPhotoInput.value.click();
+    }
+
+    function privateInfoPhotoPicked(event) {
+      const file = event.target.files && event.target.files[0];
+      event.target.value = ''; // so picking the same photo again still fires
+      if (!file) return;
+      closePrivateInfoCrop();
+      Object.assign(piCrop, { open: true, url: URL.createObjectURL(file), ready: false, busy: false });
+    }
+
+    function closePrivateInfoCrop() {
+      if (piCrop.url) URL.revokeObjectURL(piCrop.url);
+      piCropDrag = null;
+      Object.assign(piCrop, { open: false, url: '', ready: false, busy: false });
+    }
+
+    // Start with a wide, short box across the middle: the shape of one line.
+    function privateInfoCropLoaded() {
+      const img = piCropImage.value;
+      if (!img || !img.clientWidth) return;
+      const w = img.clientWidth * 0.8;
+      const h = Math.max(PI_CROP_MIN, Math.min(img.clientHeight * 0.3, w / 5));
+      Object.assign(piCrop, { x: (img.clientWidth - w) / 2, y: (img.clientHeight - h) / 2, w: w, h: h, ready: true });
+    }
+
+    // mode: 'move', or the corner being dragged ('nw' | 'ne' | 'sw' | 'se').
+    function piCropStart(event, mode) {
+      if (piCrop.busy) return;
+      event.currentTarget.setPointerCapture(event.pointerId);
+      piCropDrag = { mode: mode, px: event.clientX, py: event.clientY, x: piCrop.x, y: piCrop.y, w: piCrop.w, h: piCrop.h };
+    }
+
+    function piCropMove(event) {
+      const d = piCropDrag, img = piCropImage.value;
+      if (!d || !img) return;
+      const maxW = img.clientWidth, maxH = img.clientHeight;
+      const dx = event.clientX - d.px, dy = event.clientY - d.py;
+      const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+      if (d.mode === 'move') {
+        piCrop.x = clamp(d.x + dx, 0, maxW - d.w);
+        piCrop.y = clamp(d.y + dy, 0, maxH - d.h);
+        return;
+      }
+      // Resize: the corner opposite the one being dragged stays put.
+      let left = d.x, top = d.y, right = d.x + d.w, bottom = d.y + d.h;
+      if (d.mode.includes('w')) left = clamp(d.x + dx, 0, right - PI_CROP_MIN);
+      else right = clamp(right + dx, left + PI_CROP_MIN, maxW);
+      if (d.mode.includes('n')) top = clamp(d.y + dy, 0, bottom - PI_CROP_MIN);
+      else bottom = clamp(bottom + dy, top + PI_CROP_MIN, maxH);
+      Object.assign(piCrop, { x: left, y: top, w: right - left, h: bottom - top });
+    }
+
+    function piCropEnd() { piCropDrag = null; }
+
+    // The boxed part of the photo as a small JPEG.
+    function privateInfoCropBlob() {
+      const img = piCropImage.value;
+      const scale = img.naturalWidth / img.clientWidth;
+      const sw = piCrop.w * scale, sh = piCrop.h * scale;
+      const shrink = Math.min(1, PI_CROP_MAX_HEIGHT / sh);
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(sw * shrink));
+      canvas.height = Math.max(1, Math.round(sh * shrink));
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(img, piCrop.x * scale, piCrop.y * scale, sw, sh, 0, 0, canvas.width, canvas.height);
+      return new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.92));
+    }
+
+    async function readPrivateInfoCrop() {
+      if (piCrop.busy || !piCrop.ready) return;
+      piCrop.busy = true;
+      try {
+        const blob = await privateInfoCropBlob();
+        if (!blob) throw new Error('crop failed');
+        const result = await API.ocrPrivateInfo(privateInfoSecret, blob);
+        if (!piCrop.open) return; // cancelled or locked while reading
+        if (!result.text || result.score < PI_OCR_MIN_SCORE) { showToast('睇唔清楚，請只框住一行再試'); return; }
+        privateInfoForm.value = result.text.slice(0, 500);
+        closePrivateInfoCrop();
+        showToast('已讀取，請核對');
+      } catch (e) {
+        if (!privateInfoAuthFailed(e)) showToast('讀取失敗，請重試');
+      } finally {
+        piCrop.busy = false;
+      }
     }
 
     async function copyPrivateInfo(item) {
@@ -2862,6 +2964,8 @@ const app = createApp({
       isIPhone, PI_PAGE, PI_SUGGESTIONS, privateInfo, privateInfoUnlocked, privateInfoPassword, privateInfoUnlocking,
       privateInfoLockError, privateInfoForm, unlockPrivateInfo, lockPrivateInfo, openPrivateInfoForm, savePrivateInfo,
       deletePrivateInfo, copyPrivateInfo,
+      piPhotoInput, piCropImage, piCrop, pickPrivateInfoPhoto, privateInfoPhotoPicked, closePrivateInfoCrop,
+      privateInfoCropLoaded, piCropStart, piCropMove, piCropEnd, readPrivateInfoCrop,
       // Temperature
       tempHistory, tempValue, tempMethod, tempTime, tempNotes,
       adjTemp, saveTemp, deleteTemp, tempSummary,
@@ -3549,10 +3653,33 @@ const app = createApp({
       </div>
       <div class="st">內容</div>
       <div class="fc"><label class="fi"><input class="fv pi-input" type="text" v-model="privateInfoForm.value" maxlength="500" autocomplete="off" placeholder="例如：號碼" aria-label="內容" required></label></div>
+      <div class="pi-scan-row">
+        <button type="button" class="pi-scan" @click="pickPrivateInfoPhoto"><svg><use href="#i-image"/></svg>影相或揀相讀取號碼</button>
+        <input ref="piPhotoInput" type="file" accept="image/*" hidden @change="privateInfoPhotoPicked">
+      </div>
       <div class="fc" style="margin-top:16px"><label class="fi"><span class="fl">備註</span><textarea class="fv" v-model="privateInfoForm.note" maxlength="2000" rows="3"></textarea></label></div>
       <div class="ba"><button class="bp" type="submit" :disabled="saving">{{ saving ? '儲存中...' : editingType === 'privateinfo' ? '更新' : '儲存' }}</button></div>
       <div class="btn-row" v-if="editingType === 'privateinfo'"><button class="bp-outline medication-delete" type="button" :disabled="saving" @click="deletePrivateInfo(editingId)">刪除</button></div>
     </form>
+  </div>
+
+  <!-- ===== PRIVATE INFO: BOX THE LINE TO READ ===== -->
+  <div class="pi-crop" v-if="piCrop.open" role="dialog" aria-label="框住要讀取嘅號碼">
+    <div class="pi-crop-hint">拖動方框，只框住號碼嗰一行</div>
+    <div class="pi-crop-stage">
+      <div class="pi-crop-frame">
+        <img ref="piCropImage" :src="piCrop.url" alt="" draggable="false" @load="privateInfoCropLoaded" @error="closePrivateInfoCrop(); showToast('開唔到呢張相')">
+        <div class="pi-crop-box" v-if="piCrop.ready" :style="{ left: piCrop.x + 'px', top: piCrop.y + 'px', width: piCrop.w + 'px', height: piCrop.h + 'px' }"
+          @pointerdown.prevent="piCropStart($event, 'move')" @pointermove="piCropMove" @pointerup="piCropEnd" @pointercancel="piCropEnd">
+          <span v-for="corner in ['nw', 'ne', 'sw', 'se']" :key="corner" class="pi-crop-handle" :class="'pi-crop-' + corner"
+            @pointerdown.stop.prevent="piCropStart($event, corner)" @pointermove="piCropMove" @pointerup="piCropEnd" @pointercancel="piCropEnd"></span>
+        </div>
+      </div>
+    </div>
+    <div class="pi-crop-actions">
+      <button type="button" class="pi-crop-cancel" :disabled="piCrop.busy" @click="closePrivateInfoCrop()">取消</button>
+      <button type="button" class="pi-crop-go" :disabled="piCrop.busy || !piCrop.ready" @click="readPrivateInfoCrop">{{ piCrop.busy ? '讀取中...' : '讀取號碼' }}</button>
+    </div>
   </div>
 
   <!-- ===== SUB: ADD / EDIT DRUG SENSITIVITY ===== -->

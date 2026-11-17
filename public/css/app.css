@@ -715,3 +715,21 @@ label.fi { cursor: pointer; }
 .pi-chips { padding: 10px 16px 0; }
 .pi-chips .chip { font-family: inherit; }
 .pi-chips .chip.on { background: #EAF2FF; color: var(--blue); border-color: var(--blue); }
+.pi-scan-row { padding: 10px 16px 0; }
+.pi-scan { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 44px; border: 1px solid var(--blue); border-radius: 8px; background: var(--card); color: var(--blue); font-family: inherit; font-size: 16px; cursor: pointer; }
+.pi-scan svg { width: 20px; height: 20px; }
+.pi-crop { position: fixed; inset: 0; z-index: 950; background: #111; color: #fff; display: flex; flex-direction: column; padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
+.pi-crop-hint { padding: 14px 16px; text-align: center; font-size: 15px; }
+.pi-crop-stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 0 12px; }
+.pi-crop-frame { position: relative; overflow: hidden; line-height: 0; touch-action: none; -webkit-user-select: none; user-select: none; }
+.pi-crop-frame img { display: block; max-width: calc(100vw - 24px); max-height: calc(100vh - 190px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); -webkit-touch-callout: none; pointer-events: none; }
+.pi-crop-box { position: absolute; box-sizing: border-box; border: 2px solid #fff; box-shadow: 0 0 0 9999px rgba(0,0,0,0.55); touch-action: none; cursor: move; }
+.pi-crop-handle { position: absolute; width: 36px; height: 36px; touch-action: none; }
+.pi-crop-handle::after { content: ''; position: absolute; inset: 11px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,0.35); }
+.pi-crop-nw { left: -19px; top: -19px; cursor: nwse-resize; } .pi-crop-ne { right: -19px; top: -19px; cursor: nesw-resize; }
+.pi-crop-sw { left: -19px; bottom: -19px; cursor: nesw-resize; } .pi-crop-se { right: -19px; bottom: -19px; cursor: nwse-resize; }
+.pi-crop-actions { display: flex; gap: 12px; padding: 16px; }
+.pi-crop-actions button { flex: 1; height: 48px; border-radius: 8px; font-family: inherit; font-size: 17px; cursor: pointer; }
+.pi-crop-actions button:disabled { opacity: 0.5; }
+.pi-crop-cancel { border: 1px solid rgba(255,255,255,0.5); background: transparent; color: #fff; }
+.pi-crop-go { border: none; background: var(--green); color: #fff; font-weight: 500; }

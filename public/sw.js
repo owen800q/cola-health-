@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cola-health-v15';
+const CACHE_NAME = 'cola-health-v16';
 const STATIC_ASSETS = [
   '/',
   '/index.html',

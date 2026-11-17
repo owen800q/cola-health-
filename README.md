@@ -41,3 +41,30 @@ npx wrangler deploy --dry-run
 - 密碼由伺服器檢查，API 冇密碼一律拒絕（401）；同一 IP 15 分鐘內錯 10 次會暫時封鎖（429）。回應唔會被 Service Worker 或瀏覽器快取。
 - 預設密碼喺程式碼只存 SHA-256；如要改密碼，可執行 `npx wrangler secret put PRIVATE_INFO_PASSWORD`。
 - 資料儲存於 D1 `private_info` 資料表，部署後首次存取時自動建立，不會改動既有紀錄。
+
+### 影相讀取號碼（OCR）
+
+新增／修改私人資料時，撳「影相或揀相讀取號碼」可以影相或者喺相簿揀相，拖動方框框住號碼嗰一行，再撳「讀取號碼」，辨識結果會填入「內容」欄，儲存前可以自行核對修改。
+
+- 文字辨識喺 Worker 入面行，用 **PP-OCRv6 small** 辨識模型。只會上載框住嗰一小格（縮到最高 144px 嘅 JPEG），原相唔會離開手機；圖片只喺該次請求嘅記憶體處理，唔會儲存。
+- `POST /api/private-info/ocr` 同其他私人資料 API 一樣要密碼；圖片上限 1 MB。
+- 只做單行辨識（冇文字偵測），所以方框要只框住一行；信心值低於 0.7 會提示重新框選，唔會填入。
+
+#### 點解唔係直接部署 oar-ocr
+
+[oar-ocr](https://github.com/owen800q/oar-ocr) 用 ONNX Runtime（C++ 原生庫）做推理，Worker 只可以行 `wasm32-unknown-unknown` 嘅 WebAssembly，冇得連結原生庫，所以成個 repo 唔可以原封不動放上 Worker。`ocr-wasm/` 係佢辨識部分嘅移植：
+
+- 前後處理同 oar-ocr 嘅 CRNN 一樣（縮到高 48、BGR、`(v / 255 - 0.5) / 0.5`、右邊補零、CTC greedy decode），字典同 oar-ocr 登記嘅 `ppocrv6_dict.txt` 完全相同。
+- 推理引擎換成純 Rust 嘅 [tract](https://github.com/sonos/tract)，輸出同 ONNX Runtime 一致。
+- 編譯後嘅 `worker/ocr/oar_ocr_rec.wasm`（約 10 MB，gzip 後 2.5 MB）已經放入 repo，`wrangler deploy` 唔需要 Rust。改咗 `ocr-wasm/` 之後用 `npm run build:ocr` 重新編譯（需要 Rust 同 `rustup target add wasm32-unknown-unknown`）。
+- 21 MB 嘅模型冇得打包入 Worker，所以放喺 R2：`wrangler.toml` 將 `OCR_MODELS` 綁定去 `mobile-ocr-models`，直接讀入面嘅 `PP-OCRv6_small_rec.tar`。每個 isolate 第一次辨識先會載入（約 1 秒），之後每次約 0.2–0.6 秒。
+- 載入模型同辨識都超過免費計劃每次請求 10 ms 嘅 CPU 上限，需要 Workers Paid 計劃。記憶體用量約 64 MB（上限 128 MB）。
+
+#### 驗證
+
+```sh
+npm run test:ocr-model   # 下載模型（21 MB）去 tests/.cache，只需一次
+npm test
+```
+
+冇下載模型時，實際辨識嗰個測試會略過，其餘（密碼、圖片大小檢查）照常執行。

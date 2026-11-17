@@ -1,0 +1,8 @@
+[target.wasm32-unknown-unknown]
+rustflags = [
+  # Workers run WebAssembly SIMD; tract has simd128 matrix kernels.
+  "-C", "target-feature=+simd128",
+  # Only ONNX's random-number operators need entropy, and the recognition
+  # model has none, so no JS-backed random source is linked in.
+  "--cfg", 'getrandom_backend="unsupported"',
+]
