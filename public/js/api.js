@@ -107,6 +107,12 @@
     deleteMedication: (id) => request('/medications/' + id, { method: 'DELETE' }),
 
     // ---- Drug sensitivity list ----
+    // ---- Todos (待辦事項) ----
+    getTodos: () => request('/todos'),
+    createTodo: (data) => request('/todos', { method: 'POST', body: data }),
+    updateTodo: (id, data) => request('/todos/' + id, { method: 'PUT', body: data }),
+    deleteTodo: (id) => request('/todos/' + id, { method: 'DELETE' }),
+
     getDrugSensitivities: () => request('/drug-sensitivities'),
     createDrugSensitivity: (data) => request('/drug-sensitivities', { method: 'POST', body: data }),
     updateDrugSensitivity: (id, data) => request('/drug-sensitivities/' + id, { method: 'PUT', body: data }),

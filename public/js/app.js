@@ -621,6 +621,111 @@ const app = createApp({
       }) || null;
     });
 
+    // Todos (待辦事項): items with a date and time. The Worker pushes a reminder at
+    // 10:00 (HK) on each of the 3 days before, and on the day if it is due later.
+    const TODO_PAGE = 10;
+    const todos = ref([]);
+    const todoLoading = ref(false);
+    const todoError = ref('');
+    const todoForm = reactive({ title: '', due_date: '', due_time: '', note: '', done: false });
+    let todoLoadId = 0;
+    const openTodos = computed(() => todos.value.filter((t) => !t.done));
+    const doneTodos = computed(() => todos.value.filter((t) => t.done));
+
+    async function loadTodos() {
+      const requestId = ++todoLoadId;
+      todoLoading.value = !todos.value.length;
+      todoError.value = '';
+      try {
+        const records = await API.getTodos();
+        if (requestId === todoLoadId) todos.value = records || [];
+      } catch (e) {
+        if (requestId === todoLoadId && !todos.value.length) todoError.value = '未能載入待辦事項，請重試';
+      } finally {
+        if (requestId === todoLoadId) todoLoading.value = false;
+      }
+    }
+
+    function openTodoScreen() {
+      if (activeSub.value) closeSub();
+      if (currentPage.value === TODO_PAGE) loadTodos();
+      else go(TODO_PAGE);
+    }
+
+    function openTodoForm(item) {
+      editingId.value = item ? item.id : null;
+      editingType.value = item ? 'todo' : null;
+      const tomorrow = new Date(Date.now() + 86400000);
+      Object.assign(todoForm, {
+        title: item ? item.title : '',
+        due_date: item ? item.due_date : fmtDate(tomorrow),
+        due_time: item ? item.due_time : '10:00',
+        note: item ? item.note || '' : '',
+        done: item ? !!item.done : false,
+      });
+      openSub('td');
+    }
+
+    function todoPayload(src) {
+      return { title: src.title.trim(), due_date: src.due_date, due_time: src.due_time, note: (src.note || '').trim() || null, done: !!src.done };
+    }
+
+    async function saveTodo() {
+      if (saving.value) return;
+      const data = todoPayload(todoForm);
+      if (!data.title || data.title.length > 200) return showToast('請輸入事項（最多 200 字）');
+      if (!data.due_date || !data.due_time) return showToast('請揀日期及時間');
+      if (todoForm.note.length > 2000) return showToast('備註最多 2000 字');
+      saving.value = true;
+      showLoading('儲存中...');
+      try {
+        if (editingId.value && editingType.value === 'todo') await API.updateTodo(editingId.value, data);
+        else await API.createTodo(data);
+        hideLoading();
+        showToast(editingId.value ? '待辦事項已更新' : '待辦事項已儲存');
+        closeSub();
+        loadTodos();
+      } catch (e) { hideLoading(); showToast('儲存失敗，請重試'); }
+      finally { saving.value = false; }
+    }
+
+    async function toggleTodoDone(item) {
+      if (saving.value) return;
+      saving.value = true;
+      try {
+        await API.updateTodo(item.id, todoPayload({ ...item, done: !item.done }));
+        item.done = !item.done;
+        showToast(item.done ? '已完成' : '已改回未完成');
+        loadTodos();
+      } catch (e) { showToast('更新失敗，請重試'); }
+      finally { saving.value = false; }
+    }
+
+    async function deleteTodo(id) {
+      if (saving.value) return;
+      const ok = await confirmDialog('刪除待辦事項？', '刪除後無法恢復');
+      if (!ok || saving.value) return;
+      saving.value = true;
+      showLoading('刪除中...');
+      try {
+        await API.deleteTodo(id);
+        if (editingType.value === 'todo' && editingId.value === id) closeSub();
+        hideLoading();
+        showToast('待辦事項已刪除');
+        loadTodos();
+      } catch (e) { hideLoading(); showToast('刪除失敗，請重試'); }
+      finally { saving.value = false; }
+    }
+
+    // 「今日」「明天」「3 日後」 relative to the phone's local date.
+    function todoWhen(item) {
+      const days = Math.round((new Date(item.due_date + 'T00:00:00') - new Date(fmtDate(new Date()) + 'T00:00:00')) / 86400000);
+      const p = item.due_date.split('-');
+      const date = parseInt(p[1]) + '月' + parseInt(p[2]) + '日';
+      const rel = days === 0 ? '今日' : days === 1 ? '明天' : days === 2 ? '後天' : days > 0 ? days + ' 日後' : '已過期';
+      return { label: date + ' ' + item.due_time, rel: item.done ? '' : rel, overdue: !item.done && (days < 0 || (days === 0 && item.due_time < new Date().toTimeString().slice(0, 5))), soon: !item.done && days >= 0 && days <= 3 };
+    }
+
     // Private info (私人資料): a password-locked tab, offered on iPhone only.
     // The password stays in memory and is dropped whenever the tab is left or
     // the app goes to the background, so it must be typed again each visit.
@@ -2881,6 +2986,9 @@ const app = createApp({
       setupPush();
       loadReminders();
       loadDrugSensitivities();
+      loadTodos();
+      // Opened from a todo push notification.
+      if (location.hash === '#todo') { go(TODO_PAGE); history.replaceState(null, '', location.pathname + location.search); }
     });
 
     // Auto-refresh when app returns from background (like WeChat onShow)
@@ -2896,6 +3004,7 @@ const app = createApp({
         else if (p === 5) { loadSolidFoods(); loadSolidFoodList(); }
         else if (p === 7) loadMedicationHistory();
         else if (p === 8) loadDrugSensitivities();
+        else if (p === TODO_PAGE) loadTodos();
       }
     }
     document.addEventListener('visibilitychange', onVisibilityChange);
@@ -2920,6 +3029,7 @@ const app = createApp({
       if (p === 6) loadMilestones();
       if (p === 7) loadMedicationHistory();
       if (p === 8) loadDrugSensitivities();
+      if (p === TODO_PAGE || p === 0) loadTodos();
     });
 
     return {
@@ -2960,6 +3070,9 @@ const app = createApp({
       DS_REACTIONS, DS_SEVERITIES, drugSensitivities, drugSensitivityLoading, drugSensitivityError, drugSensitivityForm,
       openDrugSensitivityScreen, openDrugSensitivityForm, saveDrugSensitivity, deleteDrugSensitivity, loadDrugSensitivities,
       dsToggleReaction, dsDateCN, medicationSensitivityMatch, drugSensitivityOnHome,
+      // Todos
+      TODO_PAGE, todos, openTodos, doneTodos, todoLoading, todoError, todoForm,
+      loadTodos, openTodoScreen, openTodoForm, saveTodo, toggleTodoDone, deleteTodo, todoWhen,
       // Private info
       isIPhone, PI_PAGE, PI_SUGGESTIONS, privateInfo, privateInfoUnlocked, privateInfoPassword, privateInfoUnlocking,
       privateInfoLockError, privateInfoForm, unlockPrivateInfo, lockPrivateInfo, openPrivateInfoForm, savePrivateInfo,
@@ -3063,6 +3176,14 @@ const app = createApp({
       <div class="ds-home-b"><div class="ds-home-t">藥物敏感</div><div class="ds-home-n">{{ drugSensitivities.map(d => d.name).join('、') }}</div></div>
       <span class="ds-home-a"><svg><use href="#i-arrow"/></svg></span>
     </div>
+    <div class="td-home" v-if="openTodos.some(t => todoWhen(t).soon || todoWhen(t).overdue)" role="button" @click="openTodoScreen()">
+      <span class="td-home-ico"><svg><use href="#i-clock"/></svg></span>
+      <div class="td-home-b">
+        <div class="td-home-t">待辦事項</div>
+        <div class="td-home-n" v-for="t in openTodos.filter(t => todoWhen(t).soon || todoWhen(t).overdue).slice(0, 3)" :key="t.id">{{ todoWhen(t).rel }} {{ t.due_time }} · {{ t.title }}</div>
+      </div>
+      <span class="ds-home-a"><svg><use href="#i-arrow"/></svg></span>
+    </div>
     <div class="gd">
       <div class="gi" @click="openSub('af'); initTimes()"><div class="gi-ico" style="color:var(--blue)"><svg><use href="#i-plus"/></svg></div><span>記錄飲奶</span></div>
       <div class="gi" @click="openSub('ad'); initTimes()"><div class="gi-ico" style="color:var(--green)"><svg><use href="#i-edit"/></svg></div><span>記錄換片</span></div>
@@ -3070,6 +3191,7 @@ const app = createApp({
       <div class="gi" @click="openSub('at'); initTimes(); loadTempHistory()"><div class="gi-ico" style="color:var(--red)"><svg><use href="#i-thermo"/></svg></div><span>量體溫</span></div>
       <div class="gi" @click="openMedicationScreen()"><div class="gi-ico" style="color:var(--purple)"><svg><use href="#i-pill"/></svg></div><span>記錄食藥</span></div>
       <div class="gi" @click="openDrugSensitivityScreen()"><div class="gi-ico"><img class="gi-img" src="/icons/drug-sensitivity.png" alt=""></div><span>藥物敏感</span></div>
+      <div class="gi" @click="openTodoScreen()"><div class="gi-ico" style="color:var(--orange)"><svg><use href="#i-clock"/></svg></div><span>待辦事項</span></div>
       <div class="gi" @click="openSolidScreen()"><div class="gi-ico"><img class="gi-img" src="/icons/solid-food.svg" alt="記錄輔食"></div><span>記錄輔食</span></div>
       <div class="gi" @click="openSub('g6')"><div class="gi-ico" style="color:var(--red)"><svg><use href="#i-warn"/></svg></div><span>蠶豆病</span></div>
       <div class="gi" @click="openSub('he')"><div class="gi-ico" style="color:var(--warn)"><svg><use href="#i-shield"/></svg></div><span>疫苗接種</span></div>
@@ -3236,6 +3358,7 @@ const app = createApp({
     <div class="st">{{ babyName }}管理</div>
     <div class="cs">
       <div class="cl" @click="loadProfile(); openSub('pf')"><span class="ci"><svg><use href="#i-user"/></svg></span><div class="cb"><div class="ct">{{ babyName }}資料設定</div></div><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
+      <div class="cl" @click="openTodoScreen()"><span class="ci" style="color:var(--orange)"><svg><use href="#i-clock"/></svg></span><div class="cb"><div class="ct">待辦事項</div><div class="cd">到期前 3 日每朝 10:00 推送提醒</div></div><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
       <div class="cl" @click="openSub('rm')"><span class="ci" style="color:var(--orange)"><svg><use href="#i-bell"/></svg></span><div class="cb"><div class="ct">提醒及推送通知</div><div class="cd">餵奶間隔、疫苗到期提醒</div></div><span class="ca"><svg><use href="#i-arrow"/></svg></span></div>
     </div>
     <div class="st">健康</div>
@@ -3609,6 +3732,54 @@ const app = createApp({
     <div class="nt nw"><span class="nn" style="color:var(--red)"><svg><use href="#i-warn"/></svg></span><div class="nb2"><strong>嚴重反應要即時求醫</strong>如出現氣促、面腫、嘴唇發紫或持續嘔吐，應立即求醫或致電 999。</div></div>
   </div>
 
+  <!-- ===== TODOS (待辦事項) ===== -->
+  <div class="page td-page" :class="{active: currentPage === TODO_PAGE}">
+    <div class="nb"><span class="nb-back" @click="go(0)"><svg><use href="#i-back"/></svg></span><span class="nb-t">待辦事項</span><button class="medication-add" aria-label="新增待辦事項" @click="openTodoForm()"><svg><use href="#i-plus"/></svg></button></div>
+    <div class="nt ni"><span class="nn" style="color:var(--orange)"><svg><use href="#i-bell"/></svg></span><div class="nb2"><strong>自動提醒</strong>到期前 3 日起，每朝 10:00 推送通知；當日事項如在 10:00 之後亦會提醒。請先喺「提醒設定」開啟推送通知。</div></div>
+    <div class="btn-row"><button class="bp" @click="openTodoForm()">新增待辦事項</button></div>
+    <div class="empty-state" v-if="todoLoading" role="status"><p>載入中...</p></div>
+    <div class="empty-state" v-else-if="todoError" role="alert"><p>{{ todoError }}</p><button class="bp-outline" @click="loadTodos">重試</button></div>
+    <template v-else-if="todos.length">
+      <template v-if="openTodos.length">
+        <div class="st">未完成（撳圓圈標記完成）</div>
+        <div class="cs">
+          <div class="sw-row" v-for="item in openTodos" :key="item.id">
+            <div class="sw-c" @touchstart="swStart" @touchmove="swMove" @touchend="swEnd">
+              <div class="cl td-row">
+                <button type="button" class="td-check" :aria-label="'完成 ' + item.title" @click.stop="toggleTodoDone(item)"></button>
+                <div class="cb" @click="openTodoForm(item)">
+                  <div class="td-title">{{ item.title }}</div>
+                  <div class="td-when" :class="{'td-overdue': todoWhen(item).overdue, 'td-soon': todoWhen(item).soon && !todoWhen(item).overdue}">{{ todoWhen(item).label }}<span v-if="todoWhen(item).rel"> · {{ todoWhen(item).rel }}</span></div>
+                  <div class="td-note" v-if="item.note">{{ item.note }}</div>
+                </div>
+                <span class="ca" @click="openTodoForm(item)"><svg><use href="#i-arrow"/></svg></span>
+              </div>
+            </div>
+            <div class="sw-del" @click="deleteTodo(item.id)">刪除</div>
+          </div>
+        </div>
+      </template>
+      <template v-if="doneTodos.length">
+        <div class="st">已完成</div>
+        <div class="cs">
+          <div class="sw-row" v-for="item in doneTodos" :key="item.id">
+            <div class="sw-c" @touchstart="swStart" @touchmove="swMove" @touchend="swEnd">
+              <div class="cl td-row td-done">
+                <button type="button" class="td-check on" :aria-label="'改回未完成 ' + item.title" @click.stop="toggleTodoDone(item)"><svg><use href="#i-check"/></svg></button>
+                <div class="cb" @click="openTodoForm(item)">
+                  <div class="td-title">{{ item.title }}</div>
+                  <div class="td-when">{{ todoWhen(item).label }}</div>
+                </div>
+              </div>
+            </div>
+            <div class="sw-del" @click="deleteTodo(item.id)">刪除</div>
+          </div>
+        </div>
+      </template>
+    </template>
+    <div class="empty-state" v-else><p>暫時未有待辦事項。<br>例如覆診、打針或者買奶粉，都可以記低。</p></div>
+  </div>
+
   <!-- ===== PRIVATE INFO (私人資料), iPhone only, password locked ===== -->
   <div class="page pi-page" v-if="isIPhone" :class="{active: currentPage === PI_PAGE}">
     <div class="nb"><span class="nb-ph"></span><span class="nb-t">私人資料</span>
@@ -3680,6 +3851,24 @@ const app = createApp({
       <button type="button" class="pi-crop-cancel" :disabled="piCrop.busy" @click="closePrivateInfoCrop()">取消</button>
       <button type="button" class="pi-crop-go" :disabled="piCrop.busy || !piCrop.ready" @click="readPrivateInfoCrop">{{ piCrop.busy ? '讀取中...' : '讀取號碼' }}</button>
     </div>
+  </div>
+
+  <!-- ===== SUB: ADD / EDIT TODO ===== -->
+  <div class="sub medication-form td-form" :class="{active: activeSub === 'td'}">
+    <div class="nb"><span class="nb-back" @click="closeSub()"><svg><use href="#i-back"/></svg></span><span class="nb-t">{{ editingType === 'todo' ? '修改待辦事項' : '新增待辦事項' }}</span><div class="nb-ph"></div></div>
+    <form @submit.prevent="saveTodo">
+      <div class="st">要做咩？</div>
+      <div class="fc"><label class="fi"><input class="fv ds-input" type="text" v-model="todoForm.title" maxlength="200" placeholder="例如：帶可樂仔覆診" aria-label="事項" required></label></div>
+      <div class="st">幾時？</div>
+      <div class="fc">
+        <label class="fi"><span class="fl">日期</span><input class="fv" type="date" v-model="todoForm.due_date" required></label>
+        <label class="fi"><span class="fl">時間</span><input class="fv" type="time" v-model="todoForm.due_time" required></label>
+      </div>
+      <div class="fc" style="margin-top:16px"><label class="fi"><span class="fl">備註</span><textarea class="fv" v-model="todoForm.note" maxlength="2000" rows="3" placeholder="例如：記得帶針卡"></textarea></label></div>
+      <div class="fc" v-if="editingType === 'todo'"><label class="fi"><span class="fl" style="width:auto;flex:1">已完成</span><label class="tog"><input type="checkbox" v-model="todoForm.done"><span class="tsl"></span></label></label></div>
+      <div class="ba"><button class="bp" type="submit" :disabled="saving">{{ saving ? '儲存中...' : editingType === 'todo' ? '更新事項' : '儲存事項' }}</button></div>
+      <div class="btn-row" v-if="editingType === 'todo'"><button class="bp-outline medication-delete" type="button" :disabled="saving" @click="deleteTodo(editingId)">刪除事項</button></div>
+    </form>
   </div>
 
   <!-- ===== SUB: ADD / EDIT DRUG SENSITIVITY ===== -->

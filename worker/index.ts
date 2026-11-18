@@ -23,6 +23,7 @@ import { solidFoodRoutes } from './routes/solidfood';
 import { drugSensitivityRoutes } from './routes/drugsensitivity';
 import { privateInfoRoutes } from './routes/privateinfo';
 import { privateInfoOcrRoutes } from './routes/privateinfo-ocr';
+import { todoRoutes } from './routes/todo';
 import { mediaRange } from './lib/range';
 import { handleScheduled } from './scheduled';
 
@@ -67,6 +68,7 @@ app.route('/api/babyrooms', babyRoomsRoutes);
 app.route('/api/milestones', milestoneRoutes);
 app.route('/api/solidfoods', solidFoodRoutes);
 app.route('/api/drug-sensitivities', drugSensitivityRoutes);
+app.route('/api/todos', todoRoutes);
 app.route('/api/private-info/ocr', privateInfoOcrRoutes);
 app.route('/api/private-info', privateInfoRoutes);
 

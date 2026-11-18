@@ -464,3 +464,15 @@ CREATE TABLE IF NOT EXISTS private_info_auth_failures (
   failures INTEGER NOT NULL,
   window_start INTEGER NOT NULL
 );
+
+-- Todos with a due date/time (Hong Kong local). Pushed at 10:00 on the 3 days before and on the day.
+CREATE TABLE IF NOT EXISTS todos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL,
+  due_date TEXT NOT NULL,
+  due_time TEXT NOT NULL,
+  note TEXT,
+  done INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_todos_due ON todos(done, due_date, due_time);

@@ -733,3 +733,23 @@ label.fi { cursor: pointer; }
 .pi-crop-actions button:disabled { opacity: 0.5; }
 .pi-crop-cancel { border: 1px solid rgba(255,255,255,0.5); background: transparent; color: #fff; }
 .pi-crop-go { border: none; background: var(--green); color: #fff; font-weight: 500; }
+
+/* ===== Todos (待辦事項) ===== */
+.td-home { display: flex; align-items: center; gap: 10px; margin: 16px 16px 0; padding: 10px 12px; background: #FFF8EC; border: 1px solid rgba(255,149,0,0.25); border-radius: 8px; cursor: pointer; }
+.td-home:active { opacity: 0.7; }
+.td-home-ico { width: 32px; height: 32px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: var(--orange); }
+.td-home-ico svg { width: 24px; height: 24px; }
+.td-home-b { flex: 1; min-width: 0; }
+.td-home-t { font-size: 12px; line-height: 1.3; color: #a35f00; }
+.td-home-n { font-size: 15px; font-weight: 600; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cl.td-row { padding: 12px 16px; align-items: center; gap: 12px; }
+.td-row .cb { cursor: pointer; min-width: 0; }
+.td-check { width: 26px; height: 26px; flex-shrink: 0; border-radius: 50%; border: 2px solid rgba(0,0,0,0.25); background: transparent; padding: 0; display: flex; align-items: center; justify-content: center; color: #fff; cursor: pointer; }
+.td-check.on { background: var(--green); border-color: var(--green); }
+.td-check svg { width: 16px; height: 16px; }
+.td-title { font-size: 17px; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; }
+.td-when { font-size: 14px; color: var(--t2); margin-top: 3px; }
+.td-when.td-soon { color: var(--orange); font-weight: 600; }
+.td-when.td-overdue { color: var(--red); font-weight: 600; }
+.td-note { font-size: 14px; color: var(--t2); margin-top: 3px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.td-done .td-title { text-decoration: line-through; color: var(--t2); font-weight: 400; }
