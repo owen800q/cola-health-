@@ -22,6 +22,7 @@ import { milestoneRoutes } from './routes/milestone';
 import { solidFoodRoutes } from './routes/solidfood';
 import { drugSensitivityRoutes } from './routes/drugsensitivity';
 import { privateInfoRoutes } from './routes/privateinfo';
+import { privateInfoOcrRoutes } from './routes/privateinfo-ocr';
 import { mediaRange } from './lib/range';
 import { handleScheduled } from './scheduled';
 
@@ -34,6 +35,8 @@ export type Bindings = {
   GEMINI_COOKIES: string;
   GEMINI_PROXY: string;
   PRIVATE_INFO_PASSWORD?: string;
+  /** R2 bucket holding the PP-OCRv6 model archives. */
+  OCR_MODELS?: R2Bucket;
 };
 
 const app = new Hono<{ Bindings: Bindings }>();
@@ -64,6 +67,7 @@ app.route('/api/babyrooms', babyRoomsRoutes);
 app.route('/api/milestones', milestoneRoutes);
 app.route('/api/solidfoods', solidFoodRoutes);
 app.route('/api/drug-sensitivities', drugSensitivityRoutes);
+app.route('/api/private-info/ocr', privateInfoOcrRoutes);
 app.route('/api/private-info', privateInfoRoutes);
 
 // Media files answer Range requests (iOS audio, seeking, China relay).

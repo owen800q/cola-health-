@@ -11,7 +11,7 @@
       headers: { 'Content-Type': 'application/json' },
       ...options,
     };
-    if (config.body && typeof config.body === 'object') {
+    if (config.body && typeof config.body === 'object' && !(config.body instanceof Blob)) {
       config.body = JSON.stringify(config.body);
     }
     const res = await fetch(url, config);
@@ -117,6 +117,8 @@
     createPrivateInfo: (pw, data) => request('/private-info', { method: 'POST', headers: privateHeaders(pw), body: data }),
     updatePrivateInfo: (pw, id, data) => request('/private-info/' + id, { method: 'PUT', headers: privateHeaders(pw), body: data }),
     deletePrivateInfo: (pw, id) => request('/private-info/' + id, { method: 'DELETE', headers: privateHeaders(pw) }),
+    // Reads the text in a cropped picture (PP-OCRv6 small, run inside the Worker).
+    ocrPrivateInfo: (pw, image) => request('/private-info/ocr', { method: 'POST', headers: { 'Content-Type': image.type || 'image/jpeg', 'X-Private-Password': pw }, body: image }),
 
     // ---- Timeline ----
     getTimeline: (babyId, params) => {

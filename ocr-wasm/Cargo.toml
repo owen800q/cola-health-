@@ -1,0 +1,22 @@
+[package]
+name = "oar-ocr-rec-wasm"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "PP-OCRv6 text-line recognition (oar-ocr's CRNN pipeline) on a pure-Rust ONNX engine, built for Cloudflare Workers"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+tract-onnx = "0.23.10"
+
+[profile.release]
+# "s" is ~35% smaller than 3 (2.5 MB gzipped, under even the free-plan
+# script limit) for ~20% slower inference.
+opt-level = "s"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true

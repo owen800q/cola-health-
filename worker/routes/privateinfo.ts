@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import type { MiddlewareHandler } from 'hono';
 import type { Bindings } from '../index';
 
 export const privateInfoRoutes = new Hono<{ Bindings: Bindings }>();
@@ -76,7 +77,7 @@ function recordId(value: string): number | null {
 }
 
 // Every request must carry the password; nothing is readable without it.
-privateInfoRoutes.use('*', async (c, next) => {
+export const requirePrivatePassword: MiddlewareHandler<{ Bindings: Bindings }> = async (c, next) => {
   const db = c.env.DB;
   await ensureSchema(db);
   const client = c.req.header('CF-Connecting-IP') || 'unknown';
@@ -100,7 +101,8 @@ privateInfoRoutes.use('*', async (c, next) => {
   if (row) await db.prepare('DELETE FROM private_info_auth_failures WHERE client = ?').bind(client).run();
   c.header('Cache-Control', 'no-store');
   await next();
-});
+};
+privateInfoRoutes.use('*', requirePrivatePassword);
 
 privateInfoRoutes.get('/', async (c) => {
   const rows = await c.env.DB.prepare('SELECT * FROM private_info ORDER BY id ASC').all();
