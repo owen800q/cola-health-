@@ -449,3 +449,18 @@ CREATE TABLE IF NOT EXISTS drug_sensitivities (
   note TEXT,
   created_at TEXT DEFAULT (datetime('now'))
 );
+
+-- Private information (e.g. vaccination card numbers). The API requires a password.
+CREATE TABLE IF NOT EXISTS private_info (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL,
+  value TEXT NOT NULL,
+  note TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS private_info_auth_failures (
+  client TEXT PRIMARY KEY,
+  failures INTEGER NOT NULL,
+  window_start INTEGER NOT NULL
+);
