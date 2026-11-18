@@ -3,6 +3,7 @@ import type { Bindings } from './index';
 import { sendPush, type PushSub, type VapidKeys } from './lib/webpush';
 import { scrapeAndSync, shouldSync } from './lib/scraper';
 import { ensureVaccineSchema } from './lib/vaccine-schema';
+import { checkTodoReminders } from './lib/todo-reminders';
 
 interface PushPayload {
   title: string;
@@ -55,6 +56,13 @@ export async function handleScheduled(env: Bindings): Promise<void> {
     await checkVaccineBookingReminders(db, subs, vapid);
   } catch (e) {
     console.error('Vaccine booking reminder error:', e);
+  }
+
+  // Todo reminders: 10:00 HK on each of the 3 days before the due date (and the day itself).
+  try {
+    await checkTodoReminders(db, Date.now(), (payload) => broadcast(db, subs, vapid, payload));
+  } catch (e) {
+    console.error('Todo reminder error:', e);
   }
 
   // Get enabled reminders
